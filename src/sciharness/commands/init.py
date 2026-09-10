@@ -20,6 +20,8 @@ from ..project import (
 TEMPLATE_DIR = (
     Path(__file__).resolve().parent.parent / "templates" / "project"
 )
+RESOURCES_DIR = Path(__file__).resolve().parent.parent / "resources"
+PROJECT_SKILLS_DIR = Path(".agents") / "skills"
 
 PLACEHOLDER_NAME = "{{PROJECT_NAME}}"
 PLACEHOLDER_DATE = "{{PROJECT_DATE}}"
@@ -35,6 +37,7 @@ def run(args: Any) -> int:
     _prepare_target(target)
     _copy_template(TEMPLATE_DIR, target, {PLACEHOLDER_NAME: name, PLACEHOLDER_DATE: today})
     _create_directories(target)
+    _deploy_skills(target)
     _write_config(target, name, today)
 
     if args.no_git:
@@ -88,6 +91,30 @@ def _copy_template(source: Path, target: Path, replacements: Dict[str, str]) -> 
 def _create_directories(target: Path) -> None:
     for relative in REQUIRED_DIRECTORIES:
         (target / relative).mkdir(parents=True, exist_ok=True)
+
+
+def _deploy_skills(target: Path) -> None:
+    """Copy packaged Agent Skills into the portable ``.agents/skills`` location."""
+    skills_source = RESOURCES_DIR / "skills"
+    if not skills_source.is_dir():
+        raise ProjectError(
+            "bundled Agent Skills are missing: {}".format(skills_source)
+        )
+    deployed = 0
+    for skill_dir in sorted(skills_source.iterdir(), key=lambda path: path.name):
+        if not skill_dir.is_dir():
+            continue
+        for entry in sorted(skill_dir.iterdir(), key=lambda path: path.name):
+            if not entry.is_file():
+                continue
+            destination = target / PROJECT_SKILLS_DIR / skill_dir.name / entry.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(str(entry), str(destination))
+            deployed += 1
+    if deployed == 0:
+        raise ProjectError(
+            "no packaged Agent Skills found in {}".format(skills_source)
+        )
 
 
 def _write_config(target: Path, name: str, today: str) -> None:

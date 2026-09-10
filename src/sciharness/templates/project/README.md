@@ -19,6 +19,7 @@ project is readable and editable without any particular agent or tool.
 | `data/` | Data notes and the dataset registry `registry.yaml` |
 | `outputs/` | Generated figures, tables, and results |
 | `src/`, `scripts/`, `tests/` | Code for computations and analyses |
+| `.agents/skills/` | Portable project-level Agent Skills (optional; the host may ignore it) |
 
 ## Start here
 

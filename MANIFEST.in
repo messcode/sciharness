@@ -1,3 +1,4 @@
 include README.md
 include pyproject.toml
 recursive-include src/sciharness/templates *.md *.yaml
+recursive-include src/sciharness/resources *.md

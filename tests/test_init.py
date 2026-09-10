@@ -22,6 +22,7 @@ EXPECTED_FILES = (
     "README.md",
     "AGENTS.md",
     ".sci.yaml",
+    ".agents/skills/scientific-research/SKILL.md",
     "docs/CHARTER.md",
     "docs/STATE.md",
     "data/README.md",
@@ -133,3 +134,12 @@ def test_generated_project_has_independent_git_history(tmp_path):
         text=True,
     )
     assert remotes.stdout.strip() == ""
+
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=str(target),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert ".agents/skills/scientific-research/SKILL.md" in tracked.splitlines()

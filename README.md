@@ -25,35 +25,55 @@ independent scientific repository with fresh Git history
 
 ## Install
 
-Requires Python 3.8+ and (optionally) Git.
+Requires Python 3.8+ and (optionally) Git. You do **not** clone SciHarness to
+create scientific projects; install the CLI once and scaffold projects with it.
+
+Recommended, once published to PyPI:
 
 ```bash
-git clone <this-repository> sciharness
-cd sciharness
-python -m pip install -e .
-# or, isolated:
-# pipx install .
+uv tool install sciharness
+```
+
+Latest development version from GitHub:
+
+```bash
+uv tool install git+https://github.com/<OWNER>/sciharness.git
+```
+
+Alternatives:
+
+```bash
+pipx install sciharness
+# or into the current environment:
+python -m pip install sciharness
+```
+
+Check the installed version:
+
+```bash
+sci --version
 ```
 
 ## Quick start
 
 ```bash
-sci init ~/projects/example --name "Example Scientific Project"
-cd ~/projects/example
+uv tool install sciharness
 
+sci init my-study
+cd my-study
+
+sci status
 sci new question "What predicts R_k(t)?"
 sci new exploration "Inspect early trajectory" --question Q001
 sci new experiment "Test accumulated forcing" --question Q001 --exploration X001
-sci new decision "Product-law sufficiency weakened" --question Q001 --experiment EXP001
-
-sci status
 sci validate
 ```
 
-## Commands (v0.1)
+## Commands
 
 | Command | Purpose |
 | --- | --- |
+| `sci --version` | Report the installed SciHarness package version |
 | `sci init TARGET [--name NAME] [--no-git]` | Create a new project from the bundled scaffold and initialize its own Git repository |
 | `sci status [--path DIR]` | Deterministic summary of active/recent records and validation state |
 | `sci new question TITLE` | Create a question at `docs/questions/Q###-slug.md` |
@@ -103,6 +123,10 @@ STATE update        docs/STATE.md                           (maintained by human
 project/
 ├── README.md
 ├── AGENTS.md
+├── .agents/
+│   └── skills/
+│       └── scientific-research/
+│           └── SKILL.md
 ├── .sci.yaml
 ├── docs/
 │   ├── CHARTER.md
@@ -121,7 +145,8 @@ project/
 ```
 
 `sci init` copies the template bundled in the Python package, fills the project
-name and creation date, creates the empty directories, writes `.sci.yaml`, and
+name and creation date, creates the empty directories, deploys the packaged
+`scientific-research` skill into `.agents/skills/`, writes `.sci.yaml`, and
 runs `git init` plus one initial commit (skip with `--no-git`). It never clones
 this repository and never copies its `.git` history.
 
@@ -167,26 +192,44 @@ validator and reports the number of problems.
 
 ## Agent skills
 
-`skills/scientific-research/SKILL.md` is a single small skill describing when
-to read `CHARTER.md`/`STATE.md`, when to use an exploration rather than an
-experiment, when to record a decision, and to propose rather than silently
-rewrite scientific state. Generated projects include a short `AGENTS.md`
-bootstrap pointing compatible agents at that skill. The harness works fully
-without any skill support.
+The single canonical skill is packaged at
+`src/sciharness/resources/skills/scientific-research/SKILL.md` and is included
+in both wheels and sdists. `sci init` deploys it to the portable project-level
+location:
+
+```
+.agents/skills/scientific-research/SKILL.md
+```
+
+The skill describes when to read `CHARTER.md`/`STATE.md`, when to use an
+exploration rather than an experiment, when to record a decision, and to
+propose rather than silently rewrite scientific state. Generated projects also
+include a minimal always-on `AGENTS.md` bootstrap pointing at the skill and the
+`sci` CLI. No agent-specific directories (`.pi/`, `.codex/`, `.claude/`) are
+created, and the harness works fully without any skill support.
 
 ## Development
 
 ```bash
+git clone https://github.com/<OWNER>/sciharness.git
+cd sciharness
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 ```
 
-## Scope of v0.1
+The test suite builds a wheel and an sdist and installs the wheel into a
+throwaway directory to verify packaged resources and the `sci` entry point, so
+`build` and `setuptools` are included in the `dev` extra.
 
-Intentionally **not** included: databases, web UI, Obsidian integration,
-agent-specific extensions, GitHub Issues integration, manuscript release
-builders, automatic `STATE.md` rewriting, dependency graphs, migrations, and
-any workflow orchestration. Runs, dataset checksums, and richer analysis
+## Scope
+
+v0.1 provides the scientific object model and CLI; v0.1.1 adds distribution as
+a standalone tool and portable project-level Agent Skill deployment.
+Intentionally **not** included: release manifests or `sci release`, graph
+visualization, Obsidian support, migrations, `sci doctor`, automatic `STATE`
+updates, experiment completion automation, agent-specific integrations
+(Pi/Codex/Claude), GitHub Issues integration, databases, web UI, and any
+workflow orchestration. Runs, dataset checksums, and richer analysis
 provenance are candidates for later versions.

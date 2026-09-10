@@ -1,26 +1,19 @@
 # Agent bootstrap
 
-This is a sciharness scientific project. Scientific state lives in files:
+This project uses SciHarness.
 
-- `docs/CHARTER.md` — purpose, scope, and boundaries
-- `docs/STATE.md` — current scientific understanding and next actions
-- `docs/questions/` — formal questions (`Q###`)
-- `docs/decisions/` — append-only scientific decisions (`D###`)
-- `explorations/` — lightweight exploratory work (`X###`)
-- `experiments/` — evidence-bearing experiments (`EXP###`)
-- `data/registry.yaml` — dataset registry
-
-Use `sci` for deterministic bookkeeping (the CLI, not the agent, allocates IDs):
+- `docs/CHARTER.md` defines project scope.
+- `docs/STATE.md` defines the current scientific state.
+- Use the `scientific-research` skill when the host supports Agent Skills:
+  `.agents/skills/scientific-research/SKILL.md`.
+- Use the `sci` CLI for deterministic record creation and validation.
 
 ```bash
 sci status
 sci new question "..."
-sci new exploration "..." --question Q001
-sci new experiment "..." --question Q001 --exploration X001
-sci new decision "..." --question Q001 --experiment EXP001
+sci new exploration "..."
+sci new experiment "..."
 sci validate
 ```
 
-If your agent supports skills, load the `scientific-research` skill before
-acting. Read `docs/CHARTER.md` and `docs/STATE.md` first. Propose changes to
-scientific state; do not silently rewrite it.
+The Markdown/YAML files and the `sci` CLI work without any skill support.

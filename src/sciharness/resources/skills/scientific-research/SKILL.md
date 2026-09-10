@@ -9,6 +9,10 @@ A sciharness project stores scientific state in Markdown/YAML files. The `sci`
 CLI handles deterministic bookkeeping: scaffolding, ID allocation, status, and
 validation. You handle scientific interpretation.
 
+`sci init` deploys this skill into the project at
+`.agents/skills/scientific-research/SKILL.md`, the portable project-level Agent
+Skills location.
+
 ## Orientation
 
 Before acting:

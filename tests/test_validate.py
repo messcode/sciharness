@@ -35,6 +35,10 @@ def _seed_valid_records(project):
     ) == 0
 
 
+def test_validate_freshly_initialized_project(project):
+    assert main(["validate", "--path", str(project)]) == 0
+
+
 def test_validate_clean_project(project, capsys):
     _seed_valid_records(project)
     assert main(["validate", "--path", str(project)]) == 0

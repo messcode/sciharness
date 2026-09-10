@@ -1,0 +1,13 @@
+schema_version: 1
+
+# Dataset registry. Each entry describes one dataset:
+#
+# datasets:
+#   - id: DS001
+#     name: trajectory-run-01
+#     path: data/raw/run01.csv
+#     source: simulation
+#     created: "2026-02-12"
+#     notes: Initial forcing sweep.
+
+datasets: []

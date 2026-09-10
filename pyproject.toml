@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sciharness"
+version = "0.1.0"
+description = "A lightweight, cross-agent scientific research harness."
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["science", "research", "reproducibility", "agents"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = ["PyYAML>=5.3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+sci = "sciharness.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sciharness = [
+  "templates/project/*.md",
+  "templates/project/docs/*.md",
+  "templates/project/data/*.md",
+  "templates/project/data/*.yaml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

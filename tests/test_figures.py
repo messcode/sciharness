@@ -516,3 +516,178 @@ def test_status_shows_figures_only_when_present(project, capsys):
     assert "Manuscript figures" in out
     assert "figure3" in out
     assert "not approved" in out
+
+
+# ---------------------------------------------------------------------------
+# Manifest schema version
+# ---------------------------------------------------------------------------
+
+
+def test_validate_accepts_manifest_schema_version_one(project):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 0
+
+
+def test_validate_rejects_wrong_manifest_schema_version(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(project, _manifest(schema_version=999))
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "schema_version must be 1" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Release boundary: a figure may certify only its own release/ tree
+# ---------------------------------------------------------------------------
+
+
+def test_validate_accepts_own_release_artifacts(project):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": _main_panel(
+                    experiment=None,
+                    outputs={
+                        "with_legend": "release/main/with_legend/Fig3a.pdf",
+                        "without_legend_text": (
+                            "manuscript/figures/figure3/release/main/"
+                            "without_legend_text/Fig3a.pdf"
+                        ),
+                    },
+                    source_data={
+                        "required": True,
+                        "files": [
+                            "release/source_data/Fig3a.csv",
+                            "manuscript/figures/figure3/release/source_data/Fig3b.csv",
+                        ],
+                    },
+                )
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 0
+
+
+def test_validate_rejects_output_in_other_figure_release(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": _main_panel(
+                    experiment=None,
+                    outputs={
+                        "with_legend": (
+                            "manuscript/figures/figure4/release/main/with_legend/x.pdf"
+                        )
+                    },
+                )
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "must resolve inside" in capsys.readouterr().out
+
+
+def test_validate_rejects_output_in_unrelated_manuscript_dir(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": _main_panel(
+                    experiment=None,
+                    outputs={
+                        "with_legend": "manuscript/unrelated/release/main/x.pdf"
+                    },
+                )
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "must resolve inside" in capsys.readouterr().out
+
+
+def test_validate_rejects_output_outside_release_dir(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": _main_panel(
+                    experiment=None,
+                    outputs={"with_legend": "some-other-directory/x.pdf"},
+                )
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "must resolve inside" in capsys.readouterr().out
+
+
+def test_validate_rejects_source_data_in_other_figure(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": _main_panel(
+                    experiment=None,
+                    source_data={
+                        "required": True,
+                        "files": [
+                            "manuscript/figures/figure4/release/source_data/x.csv"
+                        ],
+                    },
+                )
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "must resolve inside" in capsys.readouterr().out
+
+
+def test_validate_rejects_source_data_outside_source_data_dir(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": _main_panel(
+                    experiment=None,
+                    source_data={
+                        "required": True,
+                        "files": ["release/tables/Fig3a.csv"],
+                    },
+                )
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "release/source_data" in capsys.readouterr().out
+
+
+def test_validate_detects_duplicate_resolved_release_paths(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": _main_panel(
+                    experiment=None,
+                    outputs={"with_legend": "release/main/x.pdf"},
+                ),
+                "B": _main_panel(
+                    experiment=None,
+                    outputs={
+                        "with_legend": (
+                            "manuscript/figures/figure3/release/main/x.pdf"
+                        )
+                    },
+                ),
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "duplicates release output path" in capsys.readouterr().out

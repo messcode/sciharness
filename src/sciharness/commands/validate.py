@@ -27,6 +27,7 @@ from ..project import (
     load_config,
     load_records,
     relative_path,
+    resolve_project_path,
 )
 
 
@@ -102,7 +103,13 @@ def _validate_config(root: Path, config: Dict[str, Any]) -> List[str]:
                 "{}: paths.{} must be a non-empty string".format(CONFIG_NAME, key)
             )
             continue
-        target = root / value
+        try:
+            target = resolve_project_path(
+                root, value, "{}: paths.{}".format(CONFIG_NAME, key)
+            )
+        except ProjectError as exc:
+            problems.append(str(exc))
+            continue
         if not target.exists():
             problems.append(
                 "{}: paths.{} does not exist: {}".format(CONFIG_NAME, key, value)

@@ -30,6 +30,8 @@ FIGURES_DIR = "manuscript/figures"
 
 FIGURE_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates" / "figure"
 
+FIGURE_SCHEMA_VERSION = 1
+
 FIGURE_STATUSES: Tuple[str, ...] = ("working", "validated", "released")
 PANEL_ROLES: Tuple[str, ...] = ("main", "supplementary")
 
@@ -158,6 +160,15 @@ def _normalized(value: str) -> PurePosixPath:
     return PurePosixPath(value.replace("\\", "/"))
 
 
+def _within(path: Path, directory: Path) -> bool:
+    """True when *path* is inside *directory* (both already resolved)."""
+    try:
+        path.relative_to(directory)
+        return True
+    except ValueError:
+        return False
+
+
 def _check_declared_path(
     root: Path,
     base: Path,
@@ -167,6 +178,8 @@ def _check_declared_path(
     problems: List[str],
     *,
     forbid_release_segments: bool = False,
+    must_be_within: Optional[Path] = None,
+    within_label: str = "",
 ) -> Optional[Path]:
     if not isinstance(value, str) or not value.strip():
         problems.append(
@@ -203,6 +216,13 @@ def _check_declared_path(
         problems.append(
             "{}: {} must not point into working/ or previews/: {!r}".format(
                 rel_manifest, label, value
+            )
+        )
+        return None
+    if must_be_within is not None and not _within(candidate, must_be_within):
+        problems.append(
+            "{}: {} must resolve inside {}: {!r}".format(
+                rel_manifest, label, within_label, value
             )
         )
         return None
@@ -279,6 +299,13 @@ def _validate_manifest(
     release: bool,
 ) -> List[str]:
     problems: List[str] = []
+
+    if data.get("schema_version") != FIGURE_SCHEMA_VERSION:
+        problems.append(
+            "{}: schema_version must be {}".format(
+                rel_manifest, FIGURE_SCHEMA_VERSION
+            )
+        )
 
     if data.get("figure_id") != figure_id:
         problems.append(
@@ -445,6 +472,8 @@ def _validate_panel_outputs(
     if not isinstance(outputs, dict):
         return ["{}: {}.outputs must be a mapping".format(rel_manifest, label)]
     problems: List[str] = []
+    release_root = (Path(target) / "release").resolve()
+    within_label = "{}/release".format(relative_path(root, target))
     for key in sorted(outputs, key=str):
         value = outputs[key]
         path_label = "{}.outputs.{}".format(label, key)
@@ -452,18 +481,20 @@ def _validate_panel_outputs(
         resolved = _check_declared_path(
             root, base, value, rel_manifest, path_label, problems,
             forbid_release_segments=True,
+            must_be_within=release_root,
+            within_label=within_label,
         )
         if resolved is None:
             continue
-        normalized = str(_normalized(str(value)))
-        if normalized in seen:
+        canonical = str(resolved)
+        if canonical in seen:
             problems.append(
                 "{}: {} duplicates release output path {!r} already declared by {}".format(
-                    rel_manifest, path_label, value, seen[normalized]
+                    rel_manifest, path_label, value, seen[canonical]
                 )
             )
             continue
-        seen[normalized] = path_label
+        seen[canonical] = path_label
         declared.append((path_label, str(value), resolved))
     return problems
 
@@ -482,6 +513,8 @@ def _validate_source_data(
     if not isinstance(source_data, dict):
         return ["{}: {}.source_data must be a mapping".format(rel_manifest, label)]
     problems: List[str] = []
+    source_root = (Path(target) / "release" / "source_data").resolve()
+    within_label = "{}/release/source_data".format(relative_path(root, target))
     required = source_data.get("required", False)
     if not isinstance(required, bool):
         problems.append(
@@ -504,6 +537,8 @@ def _validate_source_data(
         resolved = _check_declared_path(
             root, base, value, rel_manifest, path_label, problems,
             forbid_release_segments=True,
+            must_be_within=source_root,
+            within_label=within_label,
         )
         if resolved is None or not required:
             continue

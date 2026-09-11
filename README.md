@@ -185,7 +185,8 @@ STATE update        docs/STATE.md                           (maintained by human
 - **Decisions** record a change in scientific belief, hypothesis status, or
   research direction — not ordinary implementation choices. Supersede rather
   than rewrite: `sci new decision "..." --supersedes D001`.
-- **Runs** are computational provenance in v0.1, not first-class records.
+- **Runs** are computational provenance; they are not first-class scientific
+  records in the current version.
 
 ## Generated project layout
 

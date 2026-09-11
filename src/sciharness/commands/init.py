@@ -129,7 +129,12 @@ def _write_config(target: Path, name: str, today: str) -> None:
 
 def _init_git(target: Path) -> str:
     if shutil.which("git") is None:
-        return "git not found; skipped Git initialization"
+        raise ProjectError(
+            "Project scaffold was created at {}, but Git is not available, so "
+            "the independent repository was not created. Install Git and "
+            "initialize the repository manually, or recreate the project "
+            "with --no-git.".format(target)
+        )
     try:
         subprocess.run(
             ["git", "init", "-q"],
@@ -171,7 +176,9 @@ def _init_git(target: Path) -> str:
                 text=True,
             )
     except (OSError, subprocess.CalledProcessError) as exc:
-        return "warning: Git initialization failed ({}); project files are intact".format(
-            exc
-        )
+        raise ProjectError(
+            "Project scaffold was created at {}, but Git initialization "
+            "failed ({}). Fix Git and initialize the repository manually, or "
+            "recreate the project with --no-git.".format(target, exc)
+        ) from exc
     return "initialized Git repository with a fresh initial commit"

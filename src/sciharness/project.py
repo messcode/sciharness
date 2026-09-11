@@ -8,7 +8,7 @@ from __future__ import annotations
 import datetime
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 import yaml
@@ -136,13 +136,54 @@ def load_config(root: Path) -> Dict[str, Any]:
     return data
 
 
+def resolve_project_path(root: Path, value: Any, label: str = "path") -> Path:
+    """Resolve a configured project-relative path without escaping the root.
+
+    Rejects empty values, absolute paths (Unix, Windows drive, UNC), ``~``
+    expansion, explicit ``..`` traversal, and symlinks whose resolved target
+    leaves the project root.  Returns the resolved path, which is guaranteed
+    to be inside the resolved project root.
+    """
+    root_resolved = Path(root).expanduser().resolve()
+    if not isinstance(value, str) or not value.strip():
+        raise ProjectError("{} must be a non-empty string".format(label))
+    text = value.strip()
+    if text.startswith(("~", "/", "\\")):
+        raise ProjectError(
+            "{} must be project-relative, got {!r}".format(label, value)
+        )
+    if re.match(r"^[A-Za-z]:[\\/]", text):
+        raise ProjectError(
+            "{} must be project-relative, got {!r}".format(label, value)
+        )
+    normalized = text.replace("\\", "/")
+    if ".." in PurePosixPath(normalized).parts:
+        raise ProjectError(
+            "{} must not contain '..' path traversal: {!r}".format(label, value)
+        )
+    resolved = (root_resolved / normalized).resolve()
+    try:
+        resolved.relative_to(root_resolved)
+    except ValueError:
+        raise ProjectError(
+            "{} escapes the project root: {!r}".format(label, value)
+        )
+    return resolved
+
+
 def config_path(root: Path, key: str) -> Path:
-    """Resolve a configured project path by key (e.g. ``questions``)."""
+    """Resolve a configured project path by key (e.g. ``questions``).
+
+    The path is constrained to the project root; unsafe ``.sci.yaml`` values
+    raise :class:`ProjectError` instead of escaping the project.
+    """
     config = load_config(root)
     paths = config.get("paths")
     if not isinstance(paths, dict) or key not in paths:
         raise ProjectError("paths.{} is missing from {}".format(key, CONFIG_NAME))
-    return Path(root) / str(paths[key])
+    return resolve_project_path(
+        root, paths[key], "{}: paths.{}".format(CONFIG_NAME, key)
+    )
 
 
 def relative_path(root: Path, path: Path) -> str:
@@ -203,7 +244,12 @@ def iter_record_locations(root: Path, kind: str) -> Iterator[Tuple[str, Path]]:
     prefix = ID_PREFIX[kind]
     if kind in ("question", "decision"):
         key = "questions" if kind == "question" else "decisions"
-        directory = root / str(paths.get(key, ""))
+        try:
+            directory = resolve_project_path(
+                root, paths.get(key), "{}: paths.{}".format(CONFIG_NAME, key)
+            )
+        except ProjectError:
+            return
         if not directory.is_dir():
             return
         for path in sorted(directory.glob("{}*.md".format(prefix))):
@@ -211,7 +257,12 @@ def iter_record_locations(root: Path, kind: str) -> Iterator[Tuple[str, Path]]:
                 yield path.stem, path
     else:
         key = "explorations" if kind == "exploration" else "experiments"
-        directory = root / str(paths.get(key, ""))
+        try:
+            directory = resolve_project_path(
+                root, paths.get(key), "{}: paths.{}".format(CONFIG_NAME, key)
+            )
+        except ProjectError:
+            return
         if not directory.is_dir():
             return
         record_file = "NOTE.md" if kind == "exploration" else "README.md"

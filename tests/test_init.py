@@ -156,3 +156,46 @@ def test_generated_project_has_independent_git_history(tmp_path):
 
 def test_init_does_not_create_manuscript(project):
     assert not (project / "manuscript").exists()
+
+
+def test_init_default_fails_when_git_unavailable(tmp_path, monkeypatch, capsys):
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    target = tmp_path / "no-git-binary"
+
+    assert main(["init", str(target), "--name", "No Git Binary"]) == 1
+    # The scaffold exists, but init must not claim success.
+    assert (target / ".sci.yaml").is_file()
+    assert not (target / ".git").exists()
+    captured = capsys.readouterr()
+    assert "Git" in captured.err
+    assert "Initialized scientific project" not in captured.out
+
+
+def test_init_default_fails_when_git_command_fails(tmp_path, monkeypatch, capsys):
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    fake_git.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_git.chmod(0o755)
+    monkeypatch.setenv("PATH", str(fake_bin))
+    target = tmp_path / "git-fails"
+
+    assert main(["init", str(target), "--name", "Git Fails"]) == 1
+    assert (target / ".sci.yaml").is_file()
+    assert not (target / ".git").exists()
+    captured = capsys.readouterr()
+    assert "Git initialization" in captured.err
+    assert "Initialized scientific project" not in captured.out
+
+
+def test_init_no_git_succeeds_when_git_unavailable(tmp_path, monkeypatch):
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    target = tmp_path / "explicit-no-git"
+
+    assert main(["init", str(target), "--no-git"]) == 0
+    assert (target / ".sci.yaml").is_file()
+    assert not (target / ".git").exists()

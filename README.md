@@ -1,5 +1,7 @@
 # sciharness
 
+[![CI](https://github.com/messcode/sciharness/actions/workflows/ci.yml/badge.svg)](https://github.com/messcode/sciharness/actions/workflows/ci.yml)
+
 A lightweight, cross-agent scientific research harness.
 
 `sciharness` installs one small Python CLI, `sci`. The CLI scaffolds and

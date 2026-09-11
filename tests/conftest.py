@@ -1,4 +1,5 @@
 """Shared fixtures for the sciharness test-suite."""
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,3 +18,15 @@ def project(tmp_path):
     target = tmp_path / "project"
     assert main(["init", str(target), "--name", "Test Project", "--no-git"]) == 0
     return target
+
+
+@pytest.fixture
+def git_project(project):
+    """A project with a real Git repository for ignore checks."""
+    subprocess.run(
+        ["git", "-C", str(project), "init", "-q"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return project

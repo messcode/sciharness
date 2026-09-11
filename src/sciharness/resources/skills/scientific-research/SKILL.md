@@ -17,11 +17,13 @@ Skills location.
 
 Before acting:
 
-1. Read `docs/CHARTER.md` (purpose, scope, constraints).
-2. Read `docs/STATE.md` (current understanding and next actions).
-3. Run `sci status` for active questions, explorations, experiments, and
+1. Run `sci context` — the deterministic routing for what to read now.
+2. Read `docs/CHARTER.md` (purpose, scope, constraints).
+3. Read `docs/STATE.md` (current understanding and next actions).
+4. Run `sci status` for active questions, explorations, experiments, and
    recent decisions.
-4. Run `sci validate` if files may have drifted.
+5. Locate a specific record with `sci show ID` (for example `sci show EXP012`).
+6. Run `sci validate` if files may have drifted.
 
 ## Bookkeeping rules
 
@@ -45,6 +47,25 @@ Before acting:
   status, or research direction. Ordinary implementation choices belong in
   commits and code comments, not in decisions. Decisions are append-only; use
   `--supersedes D00x` rather than editing an old decision's meaning.
+
+## Answering project questions
+
+Use deterministic retrieval before reasoning:
+
+- **"Where are we now?"** — run `sci context`, read `docs/STATE.md`, then open
+  the active questions and experiments it points to.
+- **"Why did we run EXP012?"** — run `sci show EXP012`, read the experiment
+  README, follow the linked question, and consult a relevant decision if one
+  exists.
+- **"Why do we believe claim X?"** — follow `docs/STATE.md` to an explicit
+  decision, then to the evidence-bearing experiment behind it.
+- **"Did we try X before?"** — search historical explorations, experiments,
+  and decisions (by ID and content).
+
+Important: do not reconstruct current scientific belief solely from
+chronological history if `docs/STATE.md` contains an explicit current state.
+When history and current state differ, preserve the historical provenance but
+use the explicit newer state or decision as current.
 
 ## Boundaries
 

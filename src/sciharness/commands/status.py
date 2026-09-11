@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, List
 
+from ..figures import list_figures
 from ..project import (
     Record,
     find_project_root,
@@ -39,6 +40,18 @@ def run(args: Any) -> int:
     )
     recent = sorted(decisions, key=lambda record: id_number(record.id), reverse=True)
     _section("Recent decisions", recent[:RECENT_DECISIONS])
+
+    figures = list_figures(root)
+    if figures:
+        print("\nManuscript figures")
+        for figure_id, status, approved in figures:
+            print(
+                "  {:<10} {:<10} {}".format(
+                    figure_id,
+                    status or "unknown",
+                    "approved" if approved else "not approved",
+                )
+            )
 
     problems = validate_project(root)
     print("\nValidation")

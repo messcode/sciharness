@@ -70,6 +70,8 @@ REQUIRED_DIRECTORIES: Tuple[str, ...] = (
     "explorations",
     "experiments",
     "outputs",
+    "outputs/explorations",
+    "outputs/experiments",
     "src",
     "scripts",
     "tests",

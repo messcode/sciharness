@@ -7,9 +7,11 @@ name = "sciharness"
 dynamic = ["version"]
 description = "A lightweight, cross-agent scientific research harness."
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.8"
 keywords = ["science", "research", "reproducibility", "agents"]
 classifiers = [
+  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
 ]
@@ -33,10 +35,14 @@ version = {attr = "sciharness.__version__"}
 
 [tool.setuptools.package-data]
 sciharness = [
+  "templates/project/.gitignore",
   "templates/project/*.md",
   "templates/project/docs/*.md",
+  "templates/project/docs/guides/*.md",
   "templates/project/data/*.md",
   "templates/project/data/*.yaml",
+  "templates/figure/*.md",
+  "templates/figure/*.yaml",
   "resources/skills/*/*.md",
 ]
 

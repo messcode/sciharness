@@ -1,0 +1,11 @@
+schema_version: 1
+
+figure_id: {{FIGURE_ID}}
+status: working
+
+style_file: null
+
+release:
+  approved: false
+
+panels: {}

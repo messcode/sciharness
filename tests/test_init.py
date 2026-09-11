@@ -9,10 +9,13 @@ EXPECTED_DIRS = (
     "docs",
     "docs/questions",
     "docs/decisions",
+    "docs/guides",
     "data",
     "explorations",
     "experiments",
     "outputs",
+    "outputs/explorations",
+    "outputs/experiments",
     "src",
     "scripts",
     "tests",
@@ -21,10 +24,13 @@ EXPECTED_DIRS = (
 EXPECTED_FILES = (
     "README.md",
     "AGENTS.md",
+    ".gitignore",
     ".sci.yaml",
     ".agents/skills/scientific-research/SKILL.md",
+    ".agents/skills/scientific-figures/SKILL.md",
     "docs/CHARTER.md",
     "docs/STATE.md",
+    "docs/guides/FIGURES.md",
     "data/README.md",
     "data/registry.yaml",
 )
@@ -143,3 +149,10 @@ def test_generated_project_has_independent_git_history(tmp_path):
         text=True,
     ).stdout
     assert ".agents/skills/scientific-research/SKILL.md" in tracked.splitlines()
+    assert ".agents/skills/scientific-figures/SKILL.md" in tracked.splitlines()
+    assert "docs/guides/FIGURES.md" in tracked.splitlines()
+    assert not any(line.startswith("outputs/") for line in tracked.splitlines())
+
+
+def test_init_does_not_create_manuscript(project):
+    assert not (project / "manuscript").exists()

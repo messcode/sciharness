@@ -44,6 +44,15 @@ EXPLORATION_BODY = """# {record_id} — {title}
 
 <!-- Adaptive exploratory work. Promote to an experiment when a claim needs
 evidence under a pre-declared rule. -->
+
+## Relevant outputs
+
+Generated artifacts belong under:
+
+`outputs/explorations/{record_id}/`
+
+Only reference scientifically useful outputs here; do not enumerate every
+generated file.
 """
 
 EXPERIMENT_BODY = """# {record_id} — {title}
@@ -63,6 +72,15 @@ EXPERIMENT_BODY = """# {record_id} — {title}
 ## Interpretation
 
 <!-- Evidence-based interpretation. Fill in when available. -->
+
+## Generated outputs
+
+Generated plots, tables, logs, checkpoints and caches belong under:
+
+`outputs/experiments/{record_id}/`
+
+The experiment directory itself stores the scientific specification and
+reproducible settings.
 """
 
 DECISION_BODY = """# {record_id} — {title}
@@ -146,6 +164,21 @@ def _report(root: Path, path: Path, kind: str, record_id: str) -> None:
     print("  {}".format(relative_path(root, path)))
 
 
+def _create_output_workspace(
+    root: Path, group: str, record_id: str, subdirectories: Any
+) -> Path:
+    """Create the gitignored generated-output workspace for a record.
+
+    The workspace uses the stable ID only (for example ``X001`` / ``EXP001``),
+    never the slug.  Outputs are local generated state and are excluded from
+    Git; these directories are created eagerly so scripts have a stable home.
+    """
+    workspace = root / "outputs" / group / record_id
+    for name in subdirectories:
+        (workspace / name).mkdir(parents=True, exist_ok=True)
+    return workspace
+
+
 def _new_question(root: Path, title: str) -> int:
     record_id = next_id(root, "question")
     directory = _require_directory(root, "questions")
@@ -177,7 +210,11 @@ def _new_exploration(root: Path, title: str, question: Optional[str]) -> int:
         front["question"] = question
     note = folder / "NOTE.md"
     _write(note, front, EXPLORATION_BODY.format(record_id=record_id, title=title))
+    workspace = _create_output_workspace(
+        root, "explorations", record_id, ("plots", "tables", "logs", "cache")
+    )
     _report(root, note, "exploration", record_id)
+    print("  {}".format(relative_path(root, workspace)))
     return 0
 
 
@@ -209,6 +246,13 @@ def _new_experiment(
     )
     _report(root, readme, "experiment", record_id)
     print("  {}".format(relative_path(root, config_path_)))
+    workspace = _create_output_workspace(
+        root,
+        "experiments",
+        record_id,
+        ("plots", "tables", "logs", "checkpoints", "cache"),
+    )
+    print("  {}".format(relative_path(root, workspace)))
     return 0
 
 

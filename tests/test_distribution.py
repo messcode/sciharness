@@ -109,13 +109,24 @@ def test_distribution_name_uses_package_version(distributions):
 
 
 def test_distributions_include_license(distributions):
+    def has_license(names):
+        for name in names:
+            basename = name.replace("\\", "/").rsplit("/", 1)[-1].upper()
+            if basename.startswith("LICENSE") and "dist-info" in name:
+                return True
+        return False
+
     with zipfile.ZipFile(str(distributions["wheel"])) as archive:
-        wheel_names = archive.namelist()
-    assert any(name.endswith("dist-info/LICENSE") for name in wheel_names)
+        # Newer setuptools (PEP 639) uses .dist-info/licenses/LICENSE; older
+        # setuptools uses .dist-info/LICENSE.  Accept either layout.
+        assert has_license(archive.namelist())
 
     with tarfile.open(str(distributions["sdist"])) as archive:
-        sdist_names = archive.getnames()
-    assert any(name.endswith("/LICENSE") for name in sdist_names)
+        names = archive.getnames()
+    assert any(
+        name.replace("\\", "/").rsplit("/", 1)[-1].upper().startswith("LICENSE")
+        for name in names
+    )
 
 
 def test_wheel_installs_and_reports_version_in_clean_target(distributions, tmp_path):

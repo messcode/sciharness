@@ -27,27 +27,21 @@ independent scientific repository with fresh Git history
 
 ## Install
 
-Requires Python 3.8+ and (optionally) Git. You do **not** clone SciHarness to
-create scientific projects; install the CLI once and scaffold projects with it.
+Requires Python 3.8+ and Git. You do **not** clone SciHarness to create
+scientific projects; install the CLI once and scaffold projects with it.
 
-Recommended, once published to PyPI:
-
-```bash
-uv tool install sciharness
-```
-
-Latest development version from GitHub:
+Install directly from GitHub with uv:
 
 ```bash
 uv tool install git+https://github.com/messcode/sciharness.git
 ```
 
-Alternatives:
+The same Git URL works with other installers:
 
 ```bash
-pipx install sciharness
+pipx install git+https://github.com/messcode/sciharness.git
 # or into the current environment:
-python -m pip install sciharness
+python -m pip install git+https://github.com/messcode/sciharness.git
 ```
 
 Check the installed version:
@@ -56,10 +50,16 @@ Check the installed version:
 sci --version
 ```
 
+Update later with:
+
+```bash
+uv tool upgrade sciharness
+```
+
 ## Quick start
 
 ```bash
-uv tool install sciharness
+uv tool install git+https://github.com/messcode/sciharness.git
 
 sci init my-study
 cd my-study

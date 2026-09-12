@@ -173,6 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
     exploration_parser.add_argument(
         "--question", default=None, help="Link an existing question, e.g. Q001."
     )
+    exploration_parser.add_argument(
+        "--motivated-by",
+        action="append",
+        default=None,
+        metavar="D###",
+        help=(
+            "Link a decision that motivated this exploration; repeatable, "
+            "e.g. --motivated-by D001."
+        ),
+    )
     exploration_parser.set_defaults(func=new_command.run)
 
     experiment_parser = new_subparsers.add_parser(
@@ -197,6 +207,16 @@ def build_parser() -> argparse.ArgumentParser:
     experiment_parser.add_argument(
         "--exploration", default=None, help="Link an existing exploration, e.g. X001."
     )
+    experiment_parser.add_argument(
+        "--motivated-by",
+        action="append",
+        default=None,
+        metavar="D###",
+        help=(
+            "Link a decision that motivated this experiment; repeatable, "
+            "e.g. --motivated-by D012."
+        ),
+    )
     experiment_parser.set_defaults(func=new_command.run)
 
     decision_parser = new_subparsers.add_parser(
@@ -217,7 +237,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--question", default=None, help="Link an existing question, e.g. Q001."
     )
     decision_parser.add_argument(
-        "--experiment", default=None, help="Link an existing experiment, e.g. EXP001."
+        "--experiment",
+        default=None,
+        help=(
+            "Legacy compatibility input: link an existing experiment, e.g. "
+            "EXP001. Recorded as Decision evidence."
+        ),
+    )
+    decision_parser.add_argument(
+        "--evidence",
+        action="append",
+        default=None,
+        metavar="X###|EXP###",
+        help=(
+            "Link a scientific record reviewed as evidence; repeatable, "
+            "e.g. --evidence X014 --evidence EXP007."
+        ),
     )
     decision_parser.add_argument(
         "--supersedes", default=None, help="An earlier decision this one replaces, e.g. D001."

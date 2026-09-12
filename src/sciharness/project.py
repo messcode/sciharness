@@ -60,6 +60,13 @@ REFERENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     "decision": (("question", "question"), ("experiment", "experiment")),
 }
 
+# Provenance list fields. ``evidence`` records which scientific observations or
+# tests were reviewed for a Decision. ``motivated_by`` records which existing
+# Decisions motivated a new Exploration or Experiment. These are the only
+# relationships added in this iteration; no new object type is introduced.
+EVIDENCE_KINDS: Tuple[str, ...] = ("exploration", "experiment")
+MOTIVATED_BY_KINDS: Tuple[str, ...] = ("decision",)
+
 # Directories created by ``sci init`` even when the scaffold has no files
 # that require them.
 REQUIRED_DIRECTORIES: Tuple[str, ...] = (
@@ -216,6 +223,21 @@ def id_number(record_id: str) -> int:
     """Numeric component of an ID such as ``EXP012`` (0 when absent)."""
     match = re.search(r"(\d+)", record_id)
     return int(match.group(1)) if match else 0
+
+
+def id_matches_kind(record_id: Any, kind: str) -> bool:
+    """True when *record_id* has the shape ``ID_PREFIX[kind]<digits>``.
+
+    Structural only: this checks the ID type, not whether a record exists.
+    ``EXP###`` is never treated as an exploration ``X###``.
+    """
+    if not isinstance(record_id, str):
+        return False
+    prefix = ID_PREFIX[kind]
+    text = record_id.strip()
+    if text[: len(prefix)].upper() != prefix:
+        return False
+    return text[len(prefix):].isdigit()
 
 
 def _filename_id(kind: str, name: str) -> Optional[str]:

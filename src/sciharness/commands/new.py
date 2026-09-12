@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional, Tuple
 
 import yaml
 
 from ..project import (
+    EVIDENCE_KINDS,
+    ID_PREFIX,
+    MOTIVATED_BY_KINDS,
     ProjectError,
     config_path,
     existing_ids,
@@ -105,6 +108,8 @@ def run(args: Any) -> int:
     exploration = _clean(getattr(args, "exploration", None))
     experiment = _clean(getattr(args, "experiment", None))
     supersedes = _clean(getattr(args, "supersedes", None))
+    evidence = _dedupe(getattr(args, "evidence", None) or ())
+    motivated_by = _dedupe(getattr(args, "motivated_by", None) or ())
 
     if question:
         _require(root, "question", question)
@@ -114,16 +119,22 @@ def run(args: Any) -> int:
         _require(root, "experiment", experiment)
     if supersedes:
         _require(root, "decision", supersedes)
+    _require_members(root, evidence, EVIDENCE_KINDS, "evidence")
+    _require_members(root, motivated_by, MOTIVATED_BY_KINDS, "motivated-by")
 
     kind = args.record_kind
     if kind == "question":
         return _new_question(root, title)
     if kind == "exploration":
-        return _new_exploration(root, title, question)
+        return _new_exploration(root, title, question, motivated_by)
     if kind == "experiment":
-        return _new_experiment(root, title, question, exploration)
+        return _new_experiment(root, title, question, exploration, motivated_by)
     if kind == "decision":
-        return _new_decision(root, title, question, experiment, supersedes)
+        # ``--experiment`` is a legacy compatibility input for Decision
+        # evidence. Merge it into the canonical ``evidence`` list, keeping the
+        # first-seen order and dropping duplicates.
+        merged = _dedupe(([experiment] if experiment else []) + evidence)
+        return _new_decision(root, title, question, merged, supersedes)
     raise ProjectError("unknown record kind: {}".format(kind))
 
 
@@ -138,11 +149,34 @@ def _clean(value: Optional[str]) -> Optional[str]:
     return value or None
 
 
+def _dedupe(values: Any) -> List[str]:
+    """Normalize repeatable CLI values, dropping blanks and duplicates."""
+    result: List[str] = []
+    for value in values:
+        cleaned = _clean(value)
+        if cleaned is not None and cleaned not in result:
+            result.append(cleaned)
+    return result
+
+
 def _require(root: Path, kind: str, record_id: str) -> None:
     if record_id not in existing_ids(root, kind):
         raise ProjectError(
             "{} {} does not exist in this project".format(kind, record_id)
         )
+
+
+def _require_members(
+    root: Path, ids: List[str], kinds: Tuple[str, ...], flag: str
+) -> None:
+    for record_id in ids:
+        if not any(record_id in existing_ids(root, kind) for kind in kinds):
+            expected = " or ".join("{}###".format(ID_PREFIX[kind]) for kind in kinds)
+            raise ProjectError(
+                "--{} must reference an existing {} (got {!r})".format(
+                    flag, expected, record_id
+                )
+            )
 
 
 def _require_directory(root: Path, key: str) -> Path:
@@ -195,7 +229,12 @@ def _new_question(root: Path, title: str) -> int:
     return 0
 
 
-def _new_exploration(root: Path, title: str, question: Optional[str]) -> int:
+def _new_exploration(
+    root: Path,
+    title: str,
+    question: Optional[str],
+    motivated_by: List[str],
+) -> int:
     record_id = next_id(root, "exploration")
     parent = _require_directory(root, "explorations")
     folder = unique_path(parent, "{}-{}".format(record_id, slugify(title)), "")
@@ -208,6 +247,8 @@ def _new_exploration(root: Path, title: str, question: Optional[str]) -> int:
     }
     if question:
         front["question"] = question
+    if motivated_by:
+        front["motivated_by"] = motivated_by
     note = folder / "NOTE.md"
     _write(note, front, EXPLORATION_BODY.format(record_id=record_id, title=title))
     workspace = _create_output_workspace(
@@ -219,7 +260,11 @@ def _new_exploration(root: Path, title: str, question: Optional[str]) -> int:
 
 
 def _new_experiment(
-    root: Path, title: str, question: Optional[str], exploration: Optional[str]
+    root: Path,
+    title: str,
+    question: Optional[str],
+    exploration: Optional[str],
+    motivated_by: List[str],
 ) -> int:
     record_id = next_id(root, "experiment")
     parent = _require_directory(root, "experiments")
@@ -235,6 +280,8 @@ def _new_experiment(
         front["question"] = question
     if exploration:
         front["exploration"] = exploration
+    if motivated_by:
+        front["motivated_by"] = motivated_by
     readme = folder / "README.md"
     _write(readme, front, EXPERIMENT_BODY.format(record_id=record_id, title=title))
     # The machine-readable experiment config mirrors identity fields so that
@@ -260,7 +307,7 @@ def _new_decision(
     root: Path,
     title: str,
     question: Optional[str],
-    experiment: Optional[str],
+    evidence: List[str],
     supersedes: Optional[str],
 ) -> int:
     record_id = next_id(root, "decision")
@@ -274,8 +321,8 @@ def _new_decision(
     }
     if question:
         front["question"] = question
-    if experiment:
-        front["experiment"] = experiment
+    if evidence:
+        front["evidence"] = evidence
     if supersedes:
         front["supersedes"] = supersedes
     body = DECISION_BODY.format(record_id=record_id, title=title)

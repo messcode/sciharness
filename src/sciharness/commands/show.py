@@ -27,10 +27,18 @@ _ID_PREFIXES: Tuple[Tuple[str, str], ...] = (
 
 _FIELD_LABELS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     "question": (),
-    "exploration": (("question", "Question"),),
-    "experiment": (("question", "Question"), ("exploration", "Source exploration")),
+    "exploration": (
+        ("question", "Question"),
+        ("motivated_by", "Motivated by"),
+    ),
+    "experiment": (
+        ("question", "Question"),
+        ("exploration", "Source exploration"),
+        ("motivated_by", "Motivated by"),
+    ),
     "decision": (
         ("question", "Question"),
+        ("evidence", "Evidence"),
         ("experiment", "Experiment"),
         ("supersedes", "Supersedes"),
     ),
@@ -50,9 +58,9 @@ def run(args: Any) -> int:
     print("Title: {}".format(record.title))
     print("Status: {}".format(record.status))
     for field, label in _FIELD_LABELS[record.kind]:
-        value = record.data.get(field)
-        if value is not None and str(value).strip():
-            print("{}: {}".format(label, value))
+        text = _render_field(record.data.get(field))
+        if text:
+            print("{}: {}".format(label, text))
 
     print("\nRecord:")
     print("  {}".format(relative_path(root, record.path)))
@@ -64,6 +72,17 @@ def run(args: Any) -> int:
             print("\nOutputs:")
             print("  {}/".format(relative_path(root, workspace)))
     return 0
+
+
+def _render_field(value: Any) -> str:
+    """Render a scalar or list front-matter value for display."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(
+            str(item).strip() for item in value if str(item).strip()
+        )
+    return str(value).strip()
 
 
 def _resolve(root: Path, record_id: str) -> Record:

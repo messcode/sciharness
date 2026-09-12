@@ -83,6 +83,25 @@ sci figure init figure3
 sci figure validate figure3
 ```
 
+## Provenance links
+
+Record why a decision was made and what work it motivated:
+
+```bash
+sci new decision "Revise the working hypothesis" \
+  --question Q001 \
+  --evidence X003 \
+  --evidence EXP007
+
+sci new experiment "Test revised prediction" \
+  --question Q001 \
+  --motivated-by D001
+```
+
+`evidence` links scientific observations/tests to a Decision; `motivated_by`
+links that Decision to subsequent work. `sci validate` checks that these
+references are structurally valid; it does not judge the science.
+
 ## Filesystem layers
 
 SciHarness keeps a clear boundary between four kinds of files:
@@ -141,9 +160,9 @@ source-data invariant are documented in the generated project's
 | `sci context [--path DIR]` | Deterministic agent routing: which files to read now (charter, state, active records, guidance) |
 | `sci show ID [--path DIR]` | Resolve one record ID (`Q###`/`X###`/`EXP###`/`D###`) to its canonical record and output workspace |
 | `sci new question TITLE` | Create a question at `docs/questions/Q###-slug.md` |
-| `sci new exploration TITLE [--question Q###]` | Create `explorations/X###-slug/NOTE.md` |
-| `sci new experiment TITLE [--question Q###] [--exploration X###]` | Create `experiments/EXP###-slug/` with `README.md` and `config.yaml` |
-| `sci new decision TITLE [--question Q###] [--experiment EXP###] [--supersedes D###]` | Create an append-only decision at `docs/decisions/D###-slug.md` |
+| `sci new exploration TITLE [--question Q###] [--motivated-by D###]` | Create `explorations/X###-slug/NOTE.md` |
+| `sci new experiment TITLE [--question Q###] [--exploration X###] [--motivated-by D###]` | Create `experiments/EXP###-slug/` with `README.md` and `config.yaml` |
+| `sci new decision TITLE [--question Q###] [--experiment EXP###] [--evidence X###|EXP###] [--supersedes D###]` | Create an append-only decision at `docs/decisions/D###-slug.md` |
 | `sci figure init FIGURE_ID` | Lazily create `manuscript/figures/<id>/` with `FIGURE.md`, `manifest.yaml`, `working/`, `previews/`, and `release/` |
 | `sci figure validate FIGURE_ID [--release]` | Check figure structure, paths, roles, references; `--release` also checks approval and artifact/source-data presence |
 | `sci validate [--path DIR]` | Check config, expected paths, IDs, required fields, and references |
@@ -187,6 +206,13 @@ STATE update        docs/STATE.md                           (maintained by human
   than rewrite: `sci new decision "..." --supersedes D001`.
 - **Runs** are computational provenance; they are not first-class scientific
   records in the current version.
+
+Provenance is expressed as relationships between existing scientific objects:
+`evidence` on a Decision, and `motivated_by` on an Exploration or Experiment.
+`sci` records and validates the explicit structure only; deciding scientific
+meaning stays with the researcher or host agent. Add a new object type only
+after real use shows the existing objects cannot represent the required
+provenance.
 
 ## Generated project layout
 

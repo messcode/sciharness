@@ -8,21 +8,25 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Tuple
 
 import yaml
 
 from ..project import (
     CONFIG_NAME,
     DIRECTORY_PATH_KEYS,
+    EVIDENCE_KINDS,
     FILE_PATH_KEYS,
+    ID_PREFIX,
     KINDS,
+    MOTIVATED_BY_KINDS,
     REFERENCE_FIELDS,
     REQUIRED_PATH_KEYS,
     SUPPORTED_SCHEMA_VERSION,
     ProjectError,
     Record,
     find_project_root,
+    id_matches_kind,
     id_number,
     load_config,
     load_records,
@@ -65,6 +69,25 @@ def validate_project(root: Path) -> List[str]:
                 )
             if kind == "decision":
                 problems.extend(_check_supersedes(rel, record, ids_by_kind["decision"]))
+                problems.extend(
+                    _check_id_list(
+                        rel,
+                        record.data.get("evidence"),
+                        "evidence",
+                        EVIDENCE_KINDS,
+                        ids_by_kind,
+                    )
+                )
+            if kind in ("exploration", "experiment"):
+                problems.extend(
+                    _check_id_list(
+                        rel,
+                        record.data.get("motivated_by"),
+                        "motivated_by",
+                        MOTIVATED_BY_KINDS,
+                        ids_by_kind,
+                    )
+                )
             if kind == "experiment":
                 problems.extend(_validate_experiment_config(root, record))
 
@@ -172,6 +195,52 @@ def _check_supersedes(rel: str, record: Record, decisions: Set[str]) -> List[str
             )
         ]
     return []
+
+
+def _check_id_list(
+    rel: str,
+    value: Any,
+    field: str,
+    allowed_kinds: Tuple[str, ...],
+    ids_by_kind: Dict[str, Set[str]],
+) -> List[str]:
+    """Structurally validate an optional list of provenance IDs.
+
+    Checks list shape, non-empty string elements, allowed ID types, existence,
+    and duplicates. It never judges the scientific relationship itself.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return ["{}: {} must be a YAML list of IDs".format(rel, field)]
+    allowed = " or ".join("{}###".format(ID_PREFIX[kind]) for kind in allowed_kinds)
+    problems: List[str] = []
+    seen: Set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            problems.append(
+                "{}: {}[{}] must be a non-empty string ID".format(rel, field, index)
+            )
+            continue
+        item = item.strip()
+        if item in seen:
+            problems.append(
+                "{}: {} contains duplicate ID {!r}".format(rel, field, item)
+            )
+            continue
+        seen.add(item)
+        matched = [kind for kind in allowed_kinds if id_matches_kind(item, kind)]
+        if not matched:
+            problems.append(
+                "{}: {} {!r} must be an ID of type {}".format(rel, field, item, allowed)
+            )
+            continue
+        if not any(item in ids_by_kind[kind] for kind in matched):
+            targets = " or ".join("{} records".format(kind) for kind in matched)
+            problems.append(
+                "{}: {} {!r} not found among {}".format(rel, field, item, targets)
+            )
+    return problems
 
 
 def _validate_experiment_config(root: Path, record: Record) -> List[str]:

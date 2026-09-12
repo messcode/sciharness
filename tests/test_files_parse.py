@@ -94,4 +94,7 @@ def test_generated_front_matter_parses(project):
     )
     assert decision["id"] == "D001"
     assert decision["question"] == "Q001"
-    assert decision["experiment"] == "EXP001"
+    # ``--experiment`` is a legacy compatibility input recorded canonically as
+    # Decision evidence; new records do not write a separate ``experiment``.
+    assert decision["evidence"] == ["EXP001"]
+    assert "experiment" not in decision

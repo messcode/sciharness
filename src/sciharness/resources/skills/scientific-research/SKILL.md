@@ -31,6 +31,12 @@ Before acting:
   `sci new ...`, which allocates IDs deterministically.
 - Link records when the relationship is real, for example
   `sci new experiment "..." --question Q001 --exploration X003`.
+- When a Decision is based on explicit exploratory or experimental evidence,
+  record those references with `--evidence`, for example
+  `sci new decision "..." --evidence X003 --evidence EXP007`.
+- When a new Exploration or Experiment is started because of a prior
+  scientific Decision, record that relationship with `--motivated-by`, for
+  example `sci new experiment "..." --motivated-by D001`.
 - After changing files, run `sci validate` before committing.
 
 ## When to create each record

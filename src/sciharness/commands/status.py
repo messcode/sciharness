@@ -57,10 +57,11 @@ def run(args: Any) -> int:
     print("\nValidation")
     if not problems:
         print("  no problems")
-    else:
-        print("  {} problem(s) — run `sci validate`".format(len(problems)))
-
-    return 0
+        return 0
+    print("  {} problem(s) — run `sci validate`".format(len(problems)))
+    # `sci status` is used by agents and CI as a health check; a broken project
+    # must not look successful just because the summary could be printed.
+    return 1
 
 
 def _section(title: str, records: List[Record]) -> None:

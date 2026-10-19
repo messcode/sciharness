@@ -86,8 +86,12 @@ def test_generated_front_matter_parses(project):
             project / "experiments" / "EXP001-parsing-experiment" / "config.yaml"
         ).read_text(encoding="utf-8")
     )
-    assert experiment_config["id"] == experiment_readme["id"]
-    assert experiment_config["title"] == experiment_readme["title"]
+    assert experiment_config["schema_version"] == 1
+    assert experiment_config["record"] == experiment_readme["id"]
+    assert experiment_config["parameters"] == {}
+    # Identity/status/provenance are not duplicated in config.yaml.
+    for field in ("id", "title", "status", "created", "question", "exploration"):
+        assert field not in experiment_config
 
     decision = read_front_matter(
         project / "docs" / "decisions" / "D001-parsing-decision.md"

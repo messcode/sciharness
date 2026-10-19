@@ -83,16 +83,34 @@ def _main_panel(outputs=None, source_data=None, experiment="EXP007"):
     return panel
 
 
+def _approve(project, figure_id="figure3", by="Test Reviewer"):
+    assert (
+        main(
+            [
+                "figure",
+                "approve",
+                figure_id,
+                "--by",
+                by,
+                "--path",
+                str(project),
+            ]
+        )
+        == 0
+    )
+
+
 def _make_release_ready(project, figure_id="figure3"):
     assert main(["figure", "init", figure_id, "--path", str(project)]) == 0
     _create_experiment(project, "EXP007")
     figure = project / "manuscript" / "figures" / figure_id
+    _write_file(project / "scripts" / "figure3.py", "print('render')\n")
     _write_file(figure / "release" / "main" / "with_legend" / "Fig3a.pdf", "pdf")
     _write_file(figure / "release" / "source_data" / "Fig3a.csv", "x,y\n1,2\n")
     data = _manifest(
         figure_id=figure_id,
         status="validated",
-        release={"approved": True},
+        release={"approved": False},
         panels={
             "A": {
                 "role": "main",
@@ -107,6 +125,7 @@ def _make_release_ready(project, figure_id="figure3"):
         },
     )
     _write_manifest(project, data, figure_id)
+    _approve(project, figure_id)
     return data
 
 
@@ -369,6 +388,15 @@ def test_validate_existing_style_file_passes(project):
     assert main(["figure", "validate", "figure3", "--path", str(project)]) == 0
 
 
+def test_validate_missing_generator_file_fails(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    panel = _main_panel(experiment=None)
+    panel["generator"] = {"file": "scripts/missing.py"}
+    _write_manifest(project, _manifest(panels={"A": panel}))
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "generator.file does not exist" in capsys.readouterr().out
+
+
 def test_validate_null_style_file_passes(project):
     assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
     _write_manifest(project, _manifest(style_file=None))
@@ -469,6 +497,7 @@ def test_release_not_required_source_data_passes(project):
         },
     )
     _write_manifest(project, data)
+    _approve(project)
     assert main(["figure", "validate", "figure3", "--release", "--path", str(project)]) == 0
 
 
@@ -483,6 +512,98 @@ def test_release_missing_visual_output_fails(project, capsys):
 def test_complete_approved_validated_figure_passes(project):
     _make_release_ready(project)
     assert main(["figure", "validate", "figure3", "--release", "--path", str(project)]) == 0
+
+
+def test_release_requires_approval_record(project, capsys):
+    _make_release_ready(project)
+    approval = (
+        project
+        / "manuscript"
+        / "figures"
+        / "figure3"
+        / "release"
+        / "APPROVAL.yaml"
+    )
+    approval.unlink()
+    assert main(["figure", "validate", "figure3", "--release", "--path", str(project)]) == 1
+    assert "missing release approval record" in capsys.readouterr().out
+
+
+def test_release_accepts_released_status_after_approval(project):
+    _make_release_ready(project)
+    manifest = project / "manuscript" / "figures" / "figure3" / "manifest.yaml"
+    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    data["status"] = "released"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    assert main(["figure", "validate", "figure3", "--release", "--path", str(project)]) == 0
+
+
+def test_release_rejects_figure_md_changed_after_approval(project, capsys):
+    _make_release_ready(project)
+    figure_md = project / "manuscript" / "figures" / "figure3" / "FIGURE.md"
+    figure_md.write_text(
+        figure_md.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8"
+    )
+    assert main(["figure", "validate", "figure3", "--release", "--path", str(project)]) == 1
+    assert "FIGURE.md changed since approval" in capsys.readouterr().out
+
+
+def test_release_rejects_manifest_changed_after_approval(project, capsys):
+    _make_release_ready(project)
+    _write_file(project / "style.py", "# project style\n")
+    manifest = project / "manuscript" / "figures" / "figure3" / "manifest.yaml"
+    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    data["style_file"] = "style.py"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    assert main(["figure", "validate", "figure3", "--release", "--path", str(project)]) == 1
+    assert "manifest changed since approval" in capsys.readouterr().out
+
+
+def test_release_rejects_artifact_changed_after_approval(project, capsys):
+    _make_release_ready(project)
+    artifact = (
+        project
+        / "manuscript"
+        / "figures"
+        / "figure3"
+        / "release"
+        / "main"
+        / "with_legend"
+        / "Fig3a.pdf"
+    )
+    artifact.write_text("tampered\n", encoding="utf-8")
+    assert main(["figure", "validate", "figure3", "--release", "--path", str(project)]) == 1
+    assert "artifact changed since approval" in capsys.readouterr().out
+
+
+def test_approve_requires_validated_status(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    assert main(
+        ["figure", "approve", "figure3", "--by", "Reviewer", "--path", str(project)]
+    ) == 1
+    assert "must be 'validated' before approval" in capsys.readouterr().err
+
+
+def test_approve_writes_auditable_approval_record(project):
+    _make_release_ready(project)
+    figure = project / "manuscript" / "figures" / "figure3"
+    approval = yaml.safe_load(
+        (figure / "release" / "APPROVAL.yaml").read_text(encoding="utf-8")
+    )
+    assert approval["schema_version"] == 1
+    assert approval["approved_by"] == "Test Reviewer"
+    assert approval["approved_at"]
+    assert approval["manifest_sha256"]
+    assert set(approval["artifacts"]) == {
+        "release/main/with_legend/Fig3a.pdf",
+        "release/source_data/Fig3a.csv",
+    }
+
+    manifest = yaml.safe_load((figure / "manifest.yaml").read_text(encoding="utf-8"))
+    assert manifest["release"]["approved"] is True
+    assert manifest["release"]["approved_by"] == "Test Reviewer"
 
 
 # ---------------------------------------------------------------------------

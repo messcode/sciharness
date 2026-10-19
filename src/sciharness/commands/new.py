@@ -16,10 +16,10 @@ from ..project import (
     ID_PREFIX,
     MOTIVATED_BY_KINDS,
     ProjectError,
+    allocate_id,
     config_path,
     existing_ids,
     find_project_root,
-    next_id,
     relative_path,
     render_record,
     slugify,
@@ -180,12 +180,24 @@ def _require_members(
 
 
 def _require_directory(root: Path, key: str) -> Path:
+    """Return a configured record directory, creating it lazily if needed.
+
+    A project may be cloned without empty directories (or a user may delete an
+    empty one).  Creating the parent here keeps `sci new` usable instead of
+    producing a deadlock with `sci validate`.
+    """
     directory = config_path(root, key)
-    if not directory.is_dir():
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
         raise ProjectError(
-            "project path {!r} is missing or not a directory: {} "
-            "(run `sci validate`)".format(key, directory)
-        )
+            "project path {!r} is not a usable directory: {} ({})".format(
+                key, directory, exc
+            )
+        ) from exc
+    keep = directory / ".gitkeep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8")
     return directory
 
 
@@ -214,9 +226,10 @@ def _create_output_workspace(
 
 
 def _new_question(root: Path, title: str) -> int:
-    record_id = next_id(root, "question")
     directory = _require_directory(root, "questions")
-    path = unique_path(directory, "{}-{}".format(record_id, slugify(title)), ".md")
+    record_id = allocate_id(root, "question")
+    slug = slugify(title) or record_id
+    path = unique_path(directory, "{}-{}".format(record_id, slug), ".md")
     front = {
         "id": record_id,
         "title": title,
@@ -235,9 +248,10 @@ def _new_exploration(
     question: Optional[str],
     motivated_by: List[str],
 ) -> int:
-    record_id = next_id(root, "exploration")
     parent = _require_directory(root, "explorations")
-    folder = unique_path(parent, "{}-{}".format(record_id, slugify(title)), "")
+    record_id = allocate_id(root, "exploration")
+    slug = slugify(title) or record_id
+    folder = unique_path(parent, "{}-{}".format(record_id, slug), "")
     folder.mkdir(parents=True)
     front = {
         "id": record_id,
@@ -266,9 +280,10 @@ def _new_experiment(
     exploration: Optional[str],
     motivated_by: List[str],
 ) -> int:
-    record_id = next_id(root, "experiment")
     parent = _require_directory(root, "experiments")
-    folder = unique_path(parent, "{}-{}".format(record_id, slugify(title)), "")
+    record_id = allocate_id(root, "experiment")
+    slug = slugify(title) or record_id
+    folder = unique_path(parent, "{}-{}".format(record_id, slug), "")
     folder.mkdir(parents=True)
     front = {
         "id": record_id,
@@ -284,11 +299,19 @@ def _new_experiment(
         front["motivated_by"] = motivated_by
     readme = folder / "README.md"
     _write(readme, front, EXPERIMENT_BODY.format(record_id=record_id, title=title))
-    # The machine-readable experiment config mirrors identity fields so that
-    # scripts can load an experiment without parsing Markdown.
+    # The machine-readable config holds computational settings only.  Identity,
+    # status, and provenance have a single source of truth: README.md front
+    # matter.  Keeping them out of config.yaml prevents the two files drifting.
     config_path_ = folder / "config.yaml"
+    config_data = {
+        "schema_version": 1,
+        "record": record_id,
+        "parameters": {},
+    }
     config_path_.write_text(
-        yaml.safe_dump(dict(front), sort_keys=False, allow_unicode=True),
+        "# Experiment configuration: computational settings only.\n"
+        "# Scientific identity, status, and provenance live in README.md.\n"
+        + yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
     _report(root, readme, "experiment", record_id)
@@ -310,9 +333,10 @@ def _new_decision(
     evidence: List[str],
     supersedes: Optional[str],
 ) -> int:
-    record_id = next_id(root, "decision")
     directory = _require_directory(root, "decisions")
-    path = unique_path(directory, "{}-{}".format(record_id, slugify(title)), ".md")
+    record_id = allocate_id(root, "decision")
+    slug = slugify(title) or record_id
+    path = unique_path(directory, "{}-{}".format(record_id, slug), ".md")
     front = {
         "id": record_id,
         "title": title,

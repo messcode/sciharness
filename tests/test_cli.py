@@ -57,10 +57,15 @@ def test_figure_help_variants(capsys):
     assert "lazily" in init_out
     assert "manifest.yaml" in init_out
 
+    _help("figure", "approve")
+    approve_out = capsys.readouterr().out
+    assert "--by" in approve_out
+    assert "approval" in approve_out
+
     _help("figure", "validate")
     validate_out = capsys.readouterr().out
     assert "--release" in validate_out
-    assert "release.approved" in validate_out
+    assert "approval record" in validate_out
 
 
 def test_context_and_show_help(capsys):

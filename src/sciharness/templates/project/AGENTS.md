@@ -36,4 +36,5 @@ Do not load figure guidance for unrelated tasks.
 - Generated outputs belong under `outputs/`.
 - Experiment-specific settings belong to that experiment.
 - Historical decisions are append-only; supersede, do not rewrite.
+- Release approval is explicit; never set `release.approved` or `status: released` yourself.
 - Markdown/YAML files and the `sci` CLI work without any skill support.

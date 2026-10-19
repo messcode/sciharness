@@ -6,7 +6,9 @@ writes those files; it never performs scientific interpretation.
 from __future__ import annotations
 
 import datetime
+import os
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
@@ -15,6 +17,11 @@ import yaml
 
 CONFIG_NAME = ".sci.yaml"
 SUPPORTED_SCHEMA_VERSION = 1
+
+# ID allocation is permanent.  Every ID ever handed out by ``sci new`` gets a
+# claim file here, so deleting a record (or cloning a project) can never cause
+# the same ID to be reused for a different scientific object.
+ID_CLAIMS_DIR = ".sci/ids"
 
 KINDS: Tuple[str, ...] = ("question", "exploration", "experiment", "decision")
 
@@ -82,6 +89,21 @@ REQUIRED_DIRECTORIES: Tuple[str, ...] = (
     "src",
     "scripts",
     "tests",
+    ID_CLAIMS_DIR,
+)
+
+# Directories that have no files of their own.  Git does not track empty
+# directories, so each one gets a ``.gitkeep``; otherwise a freshly cloned
+# project would be missing the directories that ``sci validate`` requires.
+TRACKED_EMPTY_DIRECTORIES: Tuple[str, ...] = (
+    "docs/questions",
+    "docs/decisions",
+    "explorations",
+    "experiments",
+    "src",
+    "scripts",
+    "tests",
+    ID_CLAIMS_DIR,
 )
 
 DEFAULT_PATHS: Dict[str, str] = {
@@ -202,11 +224,16 @@ def relative_path(root: Path, path: Path) -> str:
 
 
 def slugify(text: str, max_length: int = 60) -> str:
-    """Convert a title into a file-name friendly slug."""
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    """Convert a title into a file-name friendly slug.
+
+    Unicode letters are preserved so non-English titles remain readable.  The
+    caller (``sci new``) falls back to the record ID when a title contains no
+    usable characters.
+    """
+    slug = re.sub(r"[^\w]+|_+", "-", text.lower(), flags=re.UNICODE).strip("-")
     if len(slug) > max_length:
         slug = slug[:max_length].rstrip("-")
-    return slug or "untitled"
+    return slug
 
 
 def unique_path(parent: Path, stem: str, suffix: str) -> Path:
@@ -303,15 +330,113 @@ def existing_ids(root: Path, kind: str) -> Set[str]:
     return ids
 
 
+def _claim_directory(root: Path) -> Path:
+    return Path(root) / ID_CLAIMS_DIR
+
+
+def claimed_ids(root: Path, kind: str) -> Set[str]:
+    """IDs permanently claimed for *kind*, whether or not a record exists."""
+    if kind not in ID_PREFIX:
+        raise ProjectError("unknown record kind: {}".format(kind))
+    directory = _claim_directory(root)
+    if not directory.is_dir():
+        return set()
+    prefix = ID_PREFIX[kind]
+    pattern = re.compile(r"^(" + re.escape(prefix) + r"\d+)$")
+    ids: Set[str] = set()
+    for entry in directory.iterdir():
+        if not entry.is_file():
+            continue
+        match = pattern.match(entry.name)
+        if match:
+            ids.add(match.group(1))
+    return ids
+
+
 def next_id(root: Path, kind: str) -> str:
-    """Allocate the next deterministic ID, e.g. ``Q001``, ``EXP012``."""
+    """Return the next free ID, e.g. ``Q001``, ``EXP012``.
+
+    Both records on disk and permanent claim files count, so an ID whose record
+    was deleted is never handed out again.
+    """
     prefix = ID_PREFIX[kind]
     highest = 0
     for name, _path in iter_record_locations(root, kind):
         match = re.match(r"^" + re.escape(prefix) + r"(\d+)", name)
         if match:
             highest = max(highest, int(match.group(1)))
+    for record_id in claimed_ids(root, kind):
+        match = re.match(r"^" + re.escape(prefix) + r"(\d+)$", record_id)
+        if match:
+            highest = max(highest, int(match.group(1)))
     return "{}{:03d}".format(prefix, highest + 1)
+
+
+def _write_claim(root: Path, kind: str, record_id: str) -> bool:
+    """Create a permanent claim file; return False when already claimed."""
+    directory = _claim_directory(root)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ProjectError(
+            "cannot create ID claim directory {}: {}".format(directory, exc)
+        ) from exc
+    claim = directory / record_id
+    try:
+        descriptor = os.open(
+            str(claim), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644
+        )
+    except FileExistsError:
+        return False
+    except OSError as exc:
+        raise ProjectError("cannot claim ID {}: {}".format(record_id, exc)) from exc
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(
+                "kind: {}\nclaimed: {}\nclaim_id: {}\n".format(
+                    kind,
+                    datetime.date.today().isoformat(),
+                    uuid.uuid4().hex,
+                )
+            )
+    except OSError as exc:
+        raise ProjectError(
+            "cannot write ID claim {}: {}".format(claim, exc)
+        ) from exc
+    return True
+
+
+def backfill_claims(root: Path, kind: str) -> None:
+    """Claim IDs of records created before the claim ledger existed.
+
+    Older projects (or hand-created records) have no claim files.  The first
+    new allocation adopts those IDs so they cannot be reused after a deletion.
+    """
+    for record_id in existing_ids(root, kind):
+        _write_claim(root, kind, record_id)
+
+
+def allocate_id(root: Path, kind: str) -> str:
+    """Atomically reserve and return the next ID for *kind*.
+
+    A claim file is created with ``O_CREAT | O_EXCL`` (atomic on POSIX and
+    Windows).  Concurrent ``sci new`` processes therefore receive distinct
+    IDs, and a claim survives deletion of the record it belongs to.  The random
+    ``claim_id`` also makes concurrent branch allocations conflict visibly in
+    Git instead of silently producing duplicate IDs.
+    """
+    if kind not in ID_PREFIX:
+        raise ProjectError("unknown record kind: {}".format(kind))
+    backfill_claims(root, kind)
+
+    for _attempt in range(10000):
+        candidate = next_id(root, kind)
+        if not _write_claim(root, kind, candidate):
+            # Another process claimed this ID between next_id() and the
+            # O_EXCL open.
+            continue
+        return candidate
+    raise ProjectError("could not allocate an ID for {}".format(kind))
 
 
 def read_front_matter(path: Path) -> Dict[str, Any]:

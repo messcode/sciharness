@@ -255,11 +255,32 @@ def _validate_experiment_config(root: Path, record: Record) -> List[str]:
         return ["{}: invalid YAML: {}".format(rel, exc)]
     if not isinstance(data, dict):
         return ["{}: must contain a YAML mapping".format(rel)]
-    for field in ("id", "title"):
-        if data.get(field) != record.data.get(field):
-            problems.append(
-                "{}: {} does not match README.md front matter".format(rel, field)
-            )
+    schema_version = data.get("schema_version")
+    if schema_version is not None and schema_version != 1:
+        problems.append("{}: schema_version must be 1".format(rel))
+    # New configs point at the record with `record:` and do not duplicate
+    # identity/status/provenance.  Legacy configs that still carry `id` and/or
+    # `title` are accepted, but must agree with README.md.
+    declared_record = data.get("record")
+    legacy_id = data.get("id")
+    if declared_record is None and legacy_id is None:
+        problems.append(
+            "{}: must declare the owning record as `record: EXP###`".format(rel)
+        )
+    elif declared_record is not None and declared_record != record.id:
+        problems.append(
+            "{}: record does not match README.md front matter".format(rel)
+        )
+    if legacy_id is not None and legacy_id != record.id:
+        problems.append(
+            "{}: id does not match README.md front matter".format(rel)
+        )
+    if "title" in data and data.get("title") != record.data.get("title"):
+        problems.append(
+            "{}: title does not match README.md front matter".format(rel)
+        )
+    if "parameters" in data and not isinstance(data["parameters"], dict):
+        problems.append("{}: parameters must be a mapping".format(rel))
     return problems
 
 

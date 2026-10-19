@@ -267,7 +267,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Figure production is separate from the scientific experiment\n"
             "lifecycle. SciHarness defines and validates structure; project-\n"
             "specific scripts render the final visual and export paired source\n"
-            "data. There is no `sci figure release` in v0.2."
+            "data. `sci figure approve` records review hashes; there is no\n"
+            "`sci figure release` in v0.2."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -292,6 +293,31 @@ def build_parser() -> argparse.ArgumentParser:
     _add_path_argument(figure_init_parser)
     figure_init_parser.set_defaults(func=figure_command.run)
 
+    figure_approve_parser = figure_subparsers.add_parser(
+        "approve",
+        help="Record explicit approval of a validated figure",
+        description=(
+            "Record explicit human approval of a validated manuscript figure.\n\n"
+            "Captures who approved it (--by), when, the current Git commit, and\n"
+            "hashes of the manifest, FIGURE.md, release artifacts, and paired\n"
+            "source data. `sci figure validate --release` re-checks those hashes,\n"
+            "so later edits invalidate the approval. This command does not render\n"
+            "or export anything."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    figure_approve_parser.add_argument(
+        "figure_id", help="Figure identifier, e.g. figure3."
+    )
+    figure_approve_parser.add_argument(
+        "--by",
+        dest="approved_by",
+        default=None,
+        help="Who approves the figure (default: Git user.name, then $USER).",
+    )
+    _add_path_argument(figure_approve_parser)
+    figure_approve_parser.set_defaults(func=figure_command.run)
+
     figure_validate_parser = figure_subparsers.add_parser(
         "validate",
         help="Validate a manuscript figure",
@@ -301,10 +327,11 @@ def build_parser() -> argparse.ArgumentParser:
             "statuses, panel roles, declared paths, path escapes, release/output\n"
             "separation, duplicate release paths, declared experiments, and the\n"
             "declared style file. No scientific judgment is made.\n\n"
-            "With --release, additionally require status 'validated', explicit\n"
-            "human approval (release.approved: true), every declared release\n"
-            "output on disk, and every required paired source-data file on disk.\n"
-            "Validation never mutates status or approval."
+            "With --release, additionally require status 'validated' or\n"
+            "'released', an explicit approval record written by `sci figure\n"
+            "approve`, matching manifest/FIGURE/artifact hashes, every declared\n"
+            "release output on disk, and every required paired source-data file\n"
+            "on disk. Validation never mutates status or approval."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

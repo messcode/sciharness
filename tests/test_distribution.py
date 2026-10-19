@@ -285,7 +285,7 @@ def test_clean_wheel_supports_v02_workflow(distributions, tmp_path):
         "figure_id": "figure3",
         "status": "validated",
         "style_file": None,
-        "release": {"approved": True},
+        "release": {"approved": False},
         "panels": {
             "A": {
                 "role": "main",
@@ -303,6 +303,10 @@ def test_clean_wheel_supports_v02_workflow(distributions, tmp_path):
     (figure / "manifest.yaml").write_text(
         yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8"
     )
+    result = run(
+        "figure", "approve", "figure3", "--by", "Distribution Test", cwd=project
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
     result = run("figure", "validate", "figure3", "--release", cwd=project)
     assert result.returncode == 0, result.stdout + result.stderr
 

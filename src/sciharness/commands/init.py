@@ -14,6 +14,7 @@ from ..project import (
     DEFAULT_PATHS,
     REQUIRED_DIRECTORIES,
     SUPPORTED_SCHEMA_VERSION,
+    TRACKED_EMPTY_DIRECTORIES,
     ProjectError,
 )
 
@@ -91,6 +92,13 @@ def _copy_template(source: Path, target: Path, replacements: Dict[str, str]) -> 
 def _create_directories(target: Path) -> None:
     for relative in REQUIRED_DIRECTORIES:
         (target / relative).mkdir(parents=True, exist_ok=True)
+    # Git does not track empty directories.  Without placeholders, a freshly
+    # cloned project would lose docs/questions, explorations, experiments, …
+    # and `sci validate` / `sci new` would fail on a brand-new clone.
+    for relative in TRACKED_EMPTY_DIRECTORIES:
+        keep = target / relative / ".gitkeep"
+        if not keep.exists():
+            keep.write_text("", encoding="utf-8")
 
 
 def _deploy_skills(target: Path) -> None:

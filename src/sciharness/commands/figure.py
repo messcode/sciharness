@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..figures import init_figure, validate_figure
+from ..figures import approve_figure, init_figure, validate_figure
 from ..project import ProjectError, find_project_root, relative_path
 
 
@@ -16,6 +16,8 @@ def run(args: Any) -> int:
     root = find_project_root(Path(args.path))
     if args.figure_command == "init":
         return _run_init(root, args.figure_id)
+    if args.figure_command == "approve":
+        return _run_approve(root, args.figure_id, args.approved_by)
     if args.figure_command == "validate":
         return _run_validate(root, args.figure_id, bool(args.release))
     raise ProjectError("unknown figure command: {}".format(args.figure_command))
@@ -26,6 +28,14 @@ def _run_init(root: Path, figure_id: str) -> int:
     print("Initialized manuscript figure {!r}".format(figure_id))
     print("  {}".format(relative_path(root, target)))
     print("  next: sci figure validate {}".format(figure_id))
+    return 0
+
+
+def _run_approve(root: Path, figure_id: str, approved_by: Any) -> int:
+    approval_path = approve_figure(root, figure_id, approved_by)
+    print("Approved manuscript figure {!r}".format(figure_id))
+    print("  {}".format(relative_path(root, approval_path)))
+    print("  review hashes recorded; `sci figure validate --release` will verify them")
     return 0
 
 
@@ -43,8 +53,8 @@ def _run_validate(root: Path, figure_id: str, release: bool) -> int:
     if release:
         print("Figure release validation OK: {!r}".format(figure_id))
         print(
-            "  status is validated; release is explicitly approved; declared "
-            "artifacts and source data exist."
+            "  status is validated or released; approval hashes match; "
+            "declared artifacts and source data exist."
         )
     else:
         print("Figure validation OK: {!r}".format(figure_id))

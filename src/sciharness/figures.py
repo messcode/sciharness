@@ -17,7 +17,13 @@ root.
 """
 from __future__ import annotations
 
+import datetime
+import hashlib
+import json
+import os
 import re
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -59,8 +65,26 @@ RELEASE_LEAF_DIRECTORIES: Tuple[str, ...] = (
 
 GITKEEP = ".gitkeep"
 
+APPROVAL_FILENAME = "APPROVAL.yaml"
+APPROVAL_SCHEMA_VERSION = 1
+
 # Path segments that may never host a publication artifact.
 _FORBIDDEN_RELEASE_SEGMENTS = ("working", "previews")
+
+
+@dataclass
+class FigureInspection:
+    """Parsed figure state plus declared release artifacts."""
+
+    target: Path
+    figure_md: Path
+    manifest_path: Path
+    rel_manifest: str
+    data: Dict[str, Any]
+    problems: List[str]
+    outputs: List[Tuple[str, str, Path]]
+    source_files: List[Tuple[str, str, Path]]
+    required_without_files: List[str]
 
 
 def validate_figure_id(figure_id: Any) -> str:
@@ -245,13 +269,148 @@ def _artifact_base(root: Path, target: Path, value: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _canonical_json(value: Any) -> Any:
+    """Normalize YAML values so JSON serialization is order- and type-safe."""
+    if isinstance(value, dict):
+        return {str(key): _canonical_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _reviewed_manifest_hash(data: Dict[str, Any]) -> str:
+    """Hash the reviewable manifest content, excluding status/approval state.
+
+    The figure goes from ``validated`` to ``released`` after approval, which
+    changes ``status`` and ``release`` in the manifest.  Those fields are
+    intentionally excluded so that the legitimate transition does not
+    invalidate the approval.  Panels, paths, style, and figure id are included.
+    """
+    payload = {
+        key: value
+        for key, value in data.items()
+        if key not in ("status", "release")
+    }
+    canonical = json.dumps(
+        _canonical_json(payload),
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _git_head(root: Path) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(root),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _git_user(root: Path) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            cwd=str(root),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _default_approver(root: Path) -> str:
+    return (
+        _git_user(root)
+        or os.environ.get("USER")
+        or os.environ.get("USERNAME")
+        or "unknown"
+    )
+
+
+def _inspect_figure(root: Path, figure_id: str) -> FigureInspection:
+    target = figure_directory(root, figure_id)
+    figure_md = target / "FIGURE.md"
+    manifest_path = target / "manifest.yaml"
+    rel_manifest = relative_path(root, manifest_path)
+    empty = FigureInspection(
+        target=target,
+        figure_md=figure_md,
+        manifest_path=manifest_path,
+        rel_manifest=rel_manifest,
+        data={},
+        problems=[],
+        outputs=[],
+        source_files=[],
+        required_without_files=[],
+    )
+    if not target.is_dir():
+        empty.problems.append(
+            "{}: figure directory does not exist".format(relative_path(root, target))
+        )
+        return empty
+
+    problems: List[str] = []
+    if not figure_md.is_file():
+        problems.append("{}: missing FIGURE.md".format(relative_path(root, figure_md)))
+    if not manifest_path.is_file():
+        problems.append("{}: missing manifest.yaml".format(rel_manifest))
+        empty.problems = problems
+        return empty
+    try:
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        problems.append("{}: invalid YAML: {}".format(rel_manifest, exc))
+        empty.problems = problems
+        return empty
+    if not isinstance(data, dict):
+        problems.append("{}: must contain a YAML mapping".format(rel_manifest))
+        empty.problems = problems
+        return empty
+
+    manifest_problems, outputs, source_files, required_without = _validate_manifest(
+        root, figure_id, target, rel_manifest, data
+    )
+    problems.extend(manifest_problems)
+    return FigureInspection(
+        target=target,
+        figure_md=figure_md,
+        manifest_path=manifest_path,
+        rel_manifest=rel_manifest,
+        data=data,
+        problems=problems,
+        outputs=outputs,
+        source_files=source_files,
+        required_without_files=required_without,
+    )
+
+
 def validate_figure(root: Path, figure_id: str, release: bool = False) -> List[str]:
     """Return a list of structural problems for a manuscript figure.
 
     With ``release=True`` additionally require explicit approval, a
-    ``validated`` status, and the presence of all declared release artifacts
-    and required paired source data.  Validation never mutates status or
-    approval.
+    ``validated`` or ``released`` status, an intact approval record, and the
+    presence and hashes of all declared release artifacts and paired source
+    data.  Validation never mutates status or approval.
     """
     root = Path(root)
     try:
@@ -259,34 +418,10 @@ def validate_figure(root: Path, figure_id: str, release: bool = False) -> List[s
     except ProjectError as exc:
         return [str(exc)]
 
-    target = figure_directory(root, figure_id)
-    rel_target = relative_path(root, target)
-    if not target.is_dir():
-        return ["{}: figure directory does not exist".format(rel_target)]
-
-    problems: List[str] = []
-
-    figure_md = target / "FIGURE.md"
-    if not figure_md.is_file():
-        problems.append("{}: missing FIGURE.md".format(relative_path(root, figure_md)))
-
-    manifest_path = target / "manifest.yaml"
-    rel_manifest = relative_path(root, manifest_path)
-    if not manifest_path.is_file():
-        problems.append("{}: missing manifest.yaml".format(rel_manifest))
-        return problems
-    try:
-        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        problems.append("{}: invalid YAML: {}".format(rel_manifest, exc))
-        return problems
-    if not isinstance(data, dict):
-        problems.append("{}: must contain a YAML mapping".format(rel_manifest))
-        return problems
-
-    problems.extend(
-        _validate_manifest(root, figure_id, target, rel_manifest, data, release)
-    )
+    inspection = _inspect_figure(root, figure_id)
+    problems = list(inspection.problems)
+    if release and inspection.data:
+        problems.extend(_validate_release(root, inspection))
     return problems
 
 
@@ -296,8 +431,12 @@ def _validate_manifest(
     target: Path,
     rel_manifest: str,
     data: Dict[str, Any],
-    release: bool,
-) -> List[str]:
+) -> Tuple[
+    List[str],
+    List[Tuple[str, str, Path]],
+    List[Tuple[str, str, Path]],
+    List[str],
+]:
     problems: List[str] = []
 
     if data.get("schema_version") != FIGURE_SCHEMA_VERSION:
@@ -329,7 +468,7 @@ def _validate_manifest(
         panels = {}
     if not isinstance(panels, dict):
         problems.append("{}: panels must be a mapping".format(rel_manifest))
-        return problems
+        return problems, [], [], []
 
     experiment_ids = existing_ids(root, "experiment")
     seen_outputs: Dict[str, str] = {}
@@ -385,18 +524,12 @@ def _validate_manifest(
             )
         )
 
-    if release:
-        problems.extend(
-            _validate_release(
-                rel_manifest,
-                status,
-                data.get("release"),
-                declared_outputs,
-                required_source_files,
-                required_without_files,
-            )
-        )
-    return problems
+    return (
+        problems,
+        declared_outputs,
+        required_source_files,
+        required_without_files,
+    )
 
 
 def _validate_style_file(root: Path, rel_manifest: str, value: Any) -> List[str]:
@@ -447,7 +580,7 @@ def _validate_generator(
     if file_value is None:
         return []
     problems: List[str] = []
-    _check_declared_path(
+    resolved = _check_declared_path(
         root,
         root,
         file_value,
@@ -455,6 +588,12 @@ def _validate_generator(
         "{}.generator.file".format(label),
         problems,
     )
+    if resolved is not None and not resolved.is_file():
+        problems.append(
+            "{}: {}.generator.file does not exist: {!r}".format(
+                rel_manifest, label, file_value
+            )
+        )
     return problems
 
 
@@ -546,45 +685,245 @@ def _validate_source_data(
     return problems
 
 
-def _validate_release(
-    rel_manifest: str,
-    status: Any,
-    release: Any,
-    declared_outputs: List[Tuple[str, str, Path]],
-    required_source_files: List[Tuple[str, str, Path]],
-    required_without_files: List[str],
-) -> List[str]:
+def _validate_release(root: Path, inspection: FigureInspection) -> List[str]:
+    data = inspection.data
+    rel_manifest = inspection.rel_manifest
     problems: List[str] = []
-    if status != "validated":
+
+    status = data.get("status")
+    if status not in ("validated", "released"):
         problems.append(
-            "{}: release validation requires status 'validated', got {!r}".format(
-                rel_manifest, status
-            )
+            "{}: release validation requires status 'validated' or 'released', "
+            "got {!r}".format(rel_manifest, status)
         )
+    release = data.get("release")
     if not isinstance(release, dict) or release.get("approved") is not True:
         problems.append(
             "{}: release.approved must be true for a release-ready figure".format(
                 rel_manifest
             )
         )
-    for _path_label, value, resolved in declared_outputs:
+
+    if not inspection.outputs:
+        problems.append(
+            "{}: release requires at least one declared panel output".format(
+                rel_manifest
+            )
+        )
+    for _path_label, value, resolved in inspection.outputs:
         if not resolved.is_file():
             problems.append(
                 "{}: declared release output does not exist: {!r}".format(
                     rel_manifest, value
                 )
             )
-    for _path_label, value, resolved in required_source_files:
+    for _path_label, value, resolved in inspection.source_files:
         if not resolved.is_file():
             problems.append(
                 "{}: required source data does not exist: {!r}".format(
                     rel_manifest, value
                 )
             )
-    for label in required_without_files:
+    for label in inspection.required_without_files:
         problems.append(
             "{}: {} is required but declares no source-data files".format(
                 rel_manifest, label
             )
         )
+
+    approval_path = inspection.target / "release" / APPROVAL_FILENAME
+    if not approval_path.is_file():
+        problems.append(
+            "{}: missing release approval record {} (run `sci figure approve {}`)"
+            .format(
+                rel_manifest,
+                relative_path(root, approval_path),
+                data.get("figure_id"),
+            )
+        )
+        return problems
+    try:
+        approval = yaml.safe_load(approval_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        problems.append(
+            "{}: invalid approval record {}: {}".format(
+                rel_manifest, relative_path(root, approval_path), exc
+            )
+        )
+        return problems
+    if not isinstance(approval, dict):
+        problems.append(
+            "{}: approval record must contain a YAML mapping".format(rel_manifest)
+        )
+        return problems
+    if approval.get("schema_version") != APPROVAL_SCHEMA_VERSION:
+        problems.append(
+            "{}: approval record schema_version must be {}".format(
+                rel_manifest, APPROVAL_SCHEMA_VERSION
+            )
+        )
+    if approval.get("figure_id") != data.get("figure_id"):
+        problems.append(
+            "{}: approval record figure_id does not match manifest".format(
+                rel_manifest
+            )
+        )
+    approved_by = approval.get("approved_by")
+    if not isinstance(approved_by, str) or not approved_by.strip():
+        problems.append(
+            "{}: approval record must name who approved the figure".format(
+                rel_manifest
+            )
+        )
+    if isinstance(release, dict) and (
+        release.get("approved_by") != approved_by
+        or release.get("approved_at") != approval.get("approved_at")
+    ):
+        problems.append(
+            "{}: manifest approval metadata does not match approval record".format(
+                rel_manifest
+            )
+        )
+    approved_at = approval.get("approved_at")
+    if not isinstance(approved_at, str) or not approved_at.strip():
+        problems.append(
+            "{}: approval record must record when the figure was approved".format(
+                rel_manifest
+            )
+        )
+    else:
+        try:
+            datetime.datetime.fromisoformat(approved_at.strip())
+        except ValueError:
+            problems.append(
+                "{}: approval record approved_at must be an ISO timestamp".format(
+                    rel_manifest
+                )
+            )
+    if approval.get("manifest_sha256") != _reviewed_manifest_hash(data):
+        problems.append(
+            "{}: manifest changed since approval (re-run `sci figure approve {}`)"
+            .format(rel_manifest, data.get("figure_id"))
+        )
+    if inspection.figure_md.is_file():
+        if approval.get("figure_md_sha256") != _sha256(inspection.figure_md):
+            problems.append(
+                "{}: FIGURE.md changed since approval (re-run `sci figure approve {}`)"
+                .format(rel_manifest, data.get("figure_id"))
+            )
+
+    artifacts = approval.get("artifacts")
+    if not isinstance(artifacts, dict):
+        problems.append(
+            "{}: approval record must contain artifact hashes".format(rel_manifest)
+        )
+        return problems
+    for _path_label, value, resolved in (
+        inspection.outputs + inspection.source_files
+    ):
+        if not resolved.is_file():
+            continue
+        expected = artifacts.get(value)
+        if not isinstance(expected, str) or not expected:
+            problems.append(
+                "{}: approval record has no hash for {!r}".format(
+                    rel_manifest, value
+                )
+            )
+        elif _sha256(resolved) != expected:
+            problems.append(
+                "{}: artifact changed since approval: {!r}".format(
+                    rel_manifest, value
+                )
+            )
     return problems
+
+
+def approve_figure(
+    root: Path, figure_id: str, approved_by: Optional[str] = None
+) -> Path:
+    """Record explicit approval of a validated figure and its artifacts.
+
+    This does not render, export, or judge the figure.  It captures the current
+    manifest, FIGURE.md, and artifact hashes so a later ``--release`` check can
+    prove that what was reviewed is still what is on disk.
+    """
+    root = Path(root)
+    validate_figure_id(figure_id)
+    inspection = _inspect_figure(root, figure_id)
+    if inspection.problems:
+        raise ProjectError(
+            "cannot approve figure {!r}:\n  - {}".format(
+                figure_id, "\n  - ".join(inspection.problems)
+            )
+        )
+    data = inspection.data
+    status = data.get("status")
+    if status != "validated":
+        raise ProjectError(
+            "figure status must be 'validated' before approval, got {!r}".format(
+                status
+            )
+        )
+    if not inspection.outputs:
+        raise ProjectError(
+            "cannot approve figure {!r}: no release outputs are declared".format(
+                figure_id
+            )
+        )
+    if inspection.required_without_files:
+        raise ProjectError(
+            "cannot approve figure {!r}: {} is required but declares no "
+            "source-data files".format(
+                figure_id, ", ".join(inspection.required_without_files)
+            )
+        )
+
+    artifacts: Dict[str, str] = {}
+    for _path_label, value, resolved in (
+        inspection.outputs + inspection.source_files
+    ):
+        if not resolved.is_file():
+            raise ProjectError(
+                "cannot approve figure {!r}: declared artifact does not exist: "
+                "{!r}".format(figure_id, value)
+            )
+        artifacts[value] = _sha256(resolved)
+
+    by = (approved_by or "").strip() or _default_approver(root)
+    approved_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    release = data.get("release")
+    if not isinstance(release, dict):
+        release = {}
+    release.update(
+        {"approved": True, "approved_by": by, "approved_at": approved_at}
+    )
+    data["release"] = release
+    inspection.manifest_path.write_text(
+        yaml.safe_dump(
+            data, sort_keys=False, allow_unicode=True, width=1000
+        ),
+        encoding="utf-8",
+    )
+
+    approval = {
+        "schema_version": APPROVAL_SCHEMA_VERSION,
+        "figure_id": figure_id,
+        "approved_by": by,
+        "approved_at": approved_at,
+        "reviewed_commit": _git_head(root),
+        "manifest_sha256": _reviewed_manifest_hash(data),
+        "figure_md_sha256": (
+            _sha256(inspection.figure_md)
+            if inspection.figure_md.is_file()
+            else None
+        ),
+        "artifacts": artifacts,
+    }
+    approval_path = inspection.target / "release" / APPROVAL_FILENAME
+    approval_path.parent.mkdir(parents=True, exist_ok=True)
+    approval_path.write_text(
+        yaml.safe_dump(approval, sort_keys=False, allow_unicode=True, width=1000),
+        encoding="utf-8",
+    )
+    return approval_path

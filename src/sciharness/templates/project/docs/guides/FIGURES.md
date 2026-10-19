@@ -87,7 +87,9 @@ Every figure directory contains:
 
 - `FIGURE.md` — scientific message, evidence basis, panel structure, validation
   requirements and release criteria;
-- `manifest.yaml` — machine-readable status, style, panels and artifact paths.
+- `manifest.yaml` — machine-readable status, style, panels and artifact paths;
+- `release/APPROVAL.yaml` — written by `sci figure approve`; approver,
+  timestamp, commit, and review hashes. Do not write it by hand.
 
 Paths declared in `manifest.yaml`:
 
@@ -99,6 +101,19 @@ Paths declared in `manifest.yaml`:
 
 Release requires explicit human approval. Agents must not set
 `release.approved: true` unless the user explicitly approves release, and must
-not move a figure to `released` on their own. `sci figure validate --release`
-does not approve or mutate anything. Working, cache, validation, preview and
-legacy artifacts must never silently become release artifacts.
+not move a figure to `released` on their own.
+
+Record approval only after the user has approved the figure:
+
+```bash
+sci figure approve figure3 --by "Reviewer Name"
+sci figure validate figure3 --release
+```
+
+`approve` requires `status: validated`, writes `release/APPROVAL.yaml`, and
+records the approver, timestamp, Git commit, a canonical manifest hash, a
+`FIGURE.md` hash, and SHA-256 hashes of every declared release output and
+required source-data file. `validate --release` recomputes those hashes; editing
+the manifest, `FIGURE.md`, visual, or CSV after approval invalidates it.
+Validation itself never mutates status or approval. Working, cache, validation,
+preview and legacy artifacts must never silently become release artifacts.

@@ -19,6 +19,18 @@ EXPECTED_DIRS = (
     "src",
     "scripts",
     "tests",
+    ".sci/ids",
+)
+
+TRACKED_EMPTY_DIRS = (
+    "docs/questions",
+    "docs/decisions",
+    "explorations",
+    "experiments",
+    "src",
+    "scripts",
+    "tests",
+    ".sci/ids",
 )
 
 EXPECTED_FILES = (
@@ -42,6 +54,8 @@ def test_init_creates_intended_structure(tmp_path):
 
     for relative in EXPECTED_DIRS:
         assert (target / relative).is_dir(), relative
+    for relative in TRACKED_EMPTY_DIRS:
+        assert (target / relative / ".gitkeep").is_file(), relative
     for relative in EXPECTED_FILES:
         assert (target / relative).is_file(), relative
 
@@ -151,7 +165,28 @@ def test_generated_project_has_independent_git_history(tmp_path):
     assert ".agents/skills/scientific-research/SKILL.md" in tracked.splitlines()
     assert ".agents/skills/scientific-figures/SKILL.md" in tracked.splitlines()
     assert "docs/guides/FIGURES.md" in tracked.splitlines()
+    assert "docs/questions/.gitkeep" in tracked.splitlines()
+    assert "experiments/.gitkeep" in tracked.splitlines()
+    assert ".sci/ids/.gitkeep" in tracked.splitlines()
     assert not any(line.startswith("outputs/") for line in tracked.splitlines())
+
+
+def test_cloned_project_remains_usable(tmp_path):
+    source = tmp_path / "source"
+    assert main(["init", str(source), "--name", "Clone Project"]) == 0
+
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", str(source), str(clone)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert main(["validate", "--path", str(clone)]) == 0
+    assert main(["new", "question", "After clone", "--path", str(clone)]) == 0
+    assert (clone / "docs" / "questions" / "Q001-after-clone.md").is_file()
+    assert main(["validate", "--path", str(clone)]) == 0
 
 
 def test_init_does_not_create_manuscript(project):

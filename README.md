@@ -81,6 +81,10 @@ sci new experiment "Confirm residual reproducibility"
 
 sci figure init figure3
 sci figure validate figure3
+
+# after explicit human review of the validated figure:
+sci figure approve figure3 --by "Reviewer Name"
+sci figure validate figure3 --release
 ```
 
 ## Provenance links
@@ -164,7 +168,8 @@ source-data invariant are documented in the generated project's
 | `sci new experiment TITLE [--question Q###] [--exploration X###] [--motivated-by D###]` | Create `experiments/EXP###-slug/` with `README.md` and `config.yaml` |
 | `sci new decision TITLE [--question Q###] [--experiment EXP###] [--evidence X###|EXP###] [--supersedes D###]` | Create an append-only decision at `docs/decisions/D###-slug.md` |
 | `sci figure init FIGURE_ID` | Lazily create `manuscript/figures/<id>/` with `FIGURE.md`, `manifest.yaml`, `working/`, `previews/`, and `release/` |
-| `sci figure validate FIGURE_ID [--release]` | Check figure structure, paths, roles, references; `--release` also checks approval and artifact/source-data presence |
+| `sci figure approve FIGURE_ID [--by NAME]` | Record explicit approval plus manifest/FIGURE/artifact hashes at `release/APPROVAL.yaml`; requires `status: validated` |
+| `sci figure validate FIGURE_ID [--release]` | Check figure structure, paths, roles, references; `--release` also checks the approval record and artifact/source-data hashes |
 | `sci validate [--path DIR]` | Check config, expected paths, IDs, required fields, and references |
 
 Commands accept `--path DIR` (default: the current directory, searching
@@ -200,7 +205,9 @@ STATE update        docs/STATE.md                           (maintained by human
 - **Explorations** are cheap, revisable, and may contain adaptive work.
 - **Experiments** are formal tests: competing hypotheses, design, primary
   estimand, and a falsification/decision rule declared before running. Result
-  fields may be filled in later.
+  fields may be filled in later. Identity, status, and provenance live only in
+  `README.md` front matter; `config.yaml` holds computational settings
+  (`record: EXP###`, parameters, environment) and does not duplicate them.
 - **Decisions** record a change in scientific belief, hypothesis status, or
   research direction — not ordinary implementation choices. Supersede rather
   than rewrite: `sci new decision "..." --supersedes D001`.
@@ -228,6 +235,8 @@ project/
 │       └── scientific-figures/
 │           └── SKILL.md
 ├── .sci.yaml
+├── .sci/
+│   └── ids/               (permanent ID claims; Git tracked)
 ├── docs/
 │   ├── CHARTER.md
 │   ├── STATE.md
@@ -259,6 +268,7 @@ manuscript/figures/figure3/
 │   ├── exploratory/  validation/  cache/  legacy/
 ├── previews/              (ignored)
 └── release/               (tracked)
+    ├── APPROVAL.yaml      (written by `sci figure approve`)
     ├── main/{with_legend, without_legend_text}/
     ├── supplementary/{with_text, without_text}/
     ├── caption/
@@ -266,11 +276,13 @@ manuscript/figures/figure3/
 ```
 
 `sci init` copies the template bundled in the Python package, fills the project
-name and creation date, creates the empty directories, deploys the packaged
+name and creation date, creates the empty directories (with `.gitkeep`
+placeholders so a fresh clone keeps them), deploys the packaged
 `scientific-research` and `scientific-figures` skills into `.agents/skills/`,
 writes `.sci.yaml`, and runs `git init` plus one initial commit (skip with
 `--no-git`). It never clones this repository and never copies its `.git`
-history.
+history. `sci new` also recreates a missing record directory lazily, so a
+cloned or partially cleaned project remains usable.
 
 The `.sci.yaml` schema is intentionally minimal:
 
@@ -292,10 +304,22 @@ paths:
 
 ## ID allocation
 
-The CLI, not the agent, allocates IDs. `sci new` scans the existing record
-files and uses the highest numeric suffix plus one (`Q001`, `Q002`, ...;
-`EXP012`, ...). Allocation is deterministic, testable, and race-free enough for
-single-user research projects.
+The CLI, not the agent, allocates IDs. `sci new` scans both existing records
+and the permanent claims in `.sci/ids/`, then atomically reserves the next ID
+with `O_CREAT | O_EXCL` (`Q001`, `Q002`, ...; `EXP012`, ...).
+
+- **IDs are never reused.** A claim file survives deletion of its record, so
+  `rm -rf experiments/EXP003-*` cannot make a future experiment become
+  `EXP003` and inherit the old `outputs/experiments/EXP003/`.
+- **Concurrent `sci new` calls are safe.** They race on the claim file, not on
+  a read-then-write scan; losers retry with the next number.
+- **Claims are Git tracked.** If two branches allocate the same ID, the claim
+  files conflict explicitly (they carry a random `claim_id`) instead of
+  silently producing duplicate records after a merge.
+- **Delete is a status change, not a file operation.** Prefer setting a
+  record's status to `dropped`/`abandoned`; if a directory is removed, its
+  claim still prevents reuse. A future `sci renumber` is the repair path for
+  duplicate IDs introduced by a merge.
 
 ## Validation
 
@@ -305,12 +329,15 @@ single-user research projects.
 - every configured path exists and is of the right kind;
 - record front matter and experiment `config.yaml` files parse;
 - required fields (`id`, `title`, `status`, `created`) are present and valid;
+- experiment `config.yaml` declares the owning `record: EXP###` (legacy `id`
+  and `title` copies are accepted when they agree with the README);
 - IDs are unique and match filenames;
 - referenced `Q` / `X` / `EXP` / `D` IDs exist, and `supersedes` points
   backwards.
 
 Validation never makes scientific judgments. `sci status` reuses the same
-validator and reports the number of problems.
+validator and returns a non-zero exit code when problems exist, so it can be
+used as a health check by agents and CI.
 
 ### Figure validation
 
@@ -319,18 +346,29 @@ judgment: the figure directory and `FIGURE.md` exist, `manifest.yaml` parses,
 `figure_id` matches the directory, statuses and panel roles are valid, declared
 paths are project-relative and stay inside the project, declared release
 outputs and source data do not point into `working/` or `previews/`, release
-output paths are not duplicated, declared evidence experiments exist, and a
-declared `style_file` exists.
+output paths are not duplicated, declared evidence experiments exist, and
+declared `generator.file` / `style_file` paths exist.
 
 `sci figure validate FIGURE_ID --release` additionally requires
-`status: validated`, `release.approved: true`, every declared release output on
-disk, and every required paired source-data file on disk. Validation never
-mutates status or approval. `sci validate` itself never requires
-`manuscript/`, so old projects without figures keep validating.
+`status: validated` or `released`, `release.approved: true`, at least one
+declared release output, every declared output and required paired source-data
+file on disk, and an intact `release/APPROVAL.yaml`.
+
+`release/APPROVAL.yaml` is written by `sci figure approve FIGURE_ID --by NAME`
+(requires `status: validated`) and records the approver, timestamp, current Git
+commit, a canonical manifest hash, a `FIGURE.md` hash, and SHA-256 hashes of
+all declared artifacts and required source data. `--release` recomputes them,
+so editing the manifest, `FIGURE.md`, visual, or CSV after approval invalidates
+the release check. Approval is still an explicit human decision; the record
+makes it auditable rather than merely a boolean. Validation never mutates
+status or approval. `sci validate` itself never requires `manuscript/`, so old
+projects without figures keep validating.
 
 There is intentionally **no** `sci figure release` in v0.2: project-specific
 scripts render the final visual and export the paired source CSV from the same
-finalized panel data.
+finalized panel data. After approval, a human may change `status` to
+`released`; the approval remains valid because review hashes exclude the
+`status` and `release` fields themselves.
 
 ## Agent skills
 
@@ -379,6 +417,9 @@ v0.1 provides the scientific object model and CLI; v0.1.1 adds distribution as
 a standalone tool and portable project-level Agent Skill deployment; v0.2
 establishes the filesystem boundary between scientific records, generated
 outputs, manuscript-figure production, and publication release artifacts.
+v0.2.1 hardens the invariants: clone-safe scaffolds, permanent atomic ID
+claims, a single source of truth for experiment identity, auditable figure
+approval hashes, and a non-zero `sci status` exit code on validation failure.
 Intentionally **not** included in v0.2: `sci figure release`, automatic
 plotting, automatic source-data CSV export, pandas/matplotlib dependencies,
 source-data inference, image comparison, journal workbook generation, Git LFS

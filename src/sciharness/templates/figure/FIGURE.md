@@ -36,4 +36,12 @@ Expected visual:
 
 ## Release criteria
 
-Release requires explicit human approval.
+Release requires explicit human approval. After validation, record it with:
+
+```bash
+sci figure approve {{FIGURE_ID}} --by "Reviewer Name"
+sci figure validate {{FIGURE_ID}} --release
+```
+
+Approval records hashes of this file, `manifest.yaml`, every release output,
+and paired source data. Editing any of them afterwards invalidates approval.

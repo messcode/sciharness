@@ -27,7 +27,9 @@ project style and do not create or modify `style.py` on your own.
 - `manuscript/figures/<id>/release/` is publication-facing state and is Git
   tracked.
 - Release requires explicit human approval. Never set `release.approved: true`
-  and never change `status` to `released` unless the user explicitly approves.
+  by hand and never change `status` to `released` unless the user explicitly
+  approves. After approval, use `sci figure approve <id> --by "<name>"`; it
+  records hashes in `release/APPROVAL.yaml` that later edits invalidate.
 - Paired source data must be exported from the same finalized panel data used
   to render the released visual. Validation CSVs in `working/validation/` are
   not automatically authoritative source data; regenerate them after a panel
@@ -41,6 +43,8 @@ project style and do not create or modify `style.py` on your own.
 ## Commands
 
 - `sci figure init <id>` scaffolds a figure directory.
+- `sci figure approve <id> --by "<name>"` records explicit approval and hashes;
+  it requires `status: validated` and an explicit human decision.
 - `sci figure validate <id>` checks structure.
-- `sci figure validate <id> --release` checks release readiness; it does not
-  mutate status or approval.
+- `sci figure validate <id> --release` checks release readiness and approval
+  hashes; it does not mutate status or approval.

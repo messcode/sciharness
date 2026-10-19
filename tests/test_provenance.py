@@ -233,7 +233,11 @@ def test_experiment_motivated_by_single(project):
     config = yaml.safe_load(
         (_experiment_path(project).parent / "config.yaml").read_text(encoding="utf-8")
     )
-    assert config["motivated_by"] == ["D001"]
+    # Identity and provenance have one source: README.md front matter.
+    assert config["record"] == "EXP001"
+    assert "motivated_by" not in config
+    assert "title" not in config
+    assert "status" not in config
 
 
 def test_experiment_motivated_by_multiple(project):

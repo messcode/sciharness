@@ -20,6 +20,7 @@
     --e: #0f8a7c;
     --d: #8b3fd1;
     --ds: #667085;
+    --fig: #b04a1a;
     --danger: #c52b2b;
     --warn: #a85f06;
     --ok: #177a4b;
@@ -41,6 +42,7 @@
       --e: #4fd1c5;
       --d: #c792ff;
       --ds: #a0a8b7;
+      --fig: #ffab7a;
       --danger: #ff8a8a;
       --warn: #ffc06a;
       --ok: #6ee7b7;
@@ -116,6 +118,26 @@
     color: var(--ink); font: inherit; outline: none;
   }
   input[type="search"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .filters { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); padding: 8px; margin-bottom: 12px; }
+  .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 7px; }
+  .filters select {
+    width: 100%; min-width: 0; padding: 5px 6px; border-radius: 7px;
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink);
+    font: inherit; font-size: 11px; outline: none;
+  }
+  .kind-filters { display: flex; flex-wrap: wrap; gap: 4px; }
+  .kind-toggle {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+    color: var(--muted); padding: 2px 6px; font: inherit; font-size: 10px;
+    cursor: pointer; opacity: .52;
+  }
+  .kind-toggle.on { opacity: 1; color: var(--ink); border-color: var(--line-strong); }
+  .kind-toggle i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .reset-filters {
+    border: 0; background: transparent; color: var(--muted); padding: 5px 0 0;
+    font: inherit; font-size: 10px; cursor: pointer; text-decoration: underline;
+  }
   .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 3px; border-radius: 9px; background: var(--panel-soft); margin-bottom: 16px; }
   .tabs button {
     border: 0; border-radius: 7px; background: transparent; color: var(--muted);
@@ -176,6 +198,7 @@
   .node-card.kind-experiment { border-left-color: var(--e); }
   .node-card.kind-decision { border-left-color: var(--d); }
   .node-card.kind-dataset { border-left-color: var(--ds); }
+  .node-card.kind-figure { border-left-color: var(--fig); }
   .node-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .kind-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
   .kind-question .kind-dot { background: var(--q); }
@@ -183,6 +206,7 @@
   .kind-experiment .kind-dot { background: var(--e); }
   .kind-decision .kind-dot { background: var(--d); }
   .kind-dataset .kind-dot { background: var(--ds); }
+.kind-figure .kind-dot { background: var(--fig); }
   .node-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .node-top code { margin-left: auto; font-size: 10px; color: var(--muted); }
   .node-title { font-weight: 620; font-size: 13px; line-height: 1.3; margin: 5px 0 3px; overflow-wrap: anywhere; }
@@ -219,6 +243,13 @@
   .legend { display: flex; flex-wrap: wrap; gap: 9px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .graph-actions { margin-left: auto; display: flex; gap: 6px; }
+  .graph-actions button {
+    border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel);
+    color: var(--ink); padding: 4px 9px; font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .graph-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .graph-actions button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .graph-wrap { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; overflow: auto; box-shadow: var(--shadow); }
   #graph { display: block; }
   .edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; opacity: .72; }
@@ -233,6 +264,7 @@
   .gnode.kind-experiment rect { fill: color-mix(in srgb, var(--e) 8%, var(--panel)); }
   .gnode.kind-decision rect { fill: color-mix(in srgb, var(--d) 9%, var(--panel)); }
   .gnode.kind-dataset rect { fill: color-mix(in srgb, var(--ds) 8%, var(--panel)); }
+  .gnode.kind-figure rect { fill: color-mix(in srgb, var(--fig) 9%, var(--panel)); }
   .gnode .gid { font: 600 11px ui-monospace, monospace; fill: var(--ink); }
   .gnode .gtitle { font: 11px ui-sans-serif, system-ui, sans-serif; fill: var(--muted); }
   .gnode .gstatus { font: 9px ui-sans-serif, system-ui, sans-serif; fill: var(--muted); opacity: .8; }
@@ -282,6 +314,14 @@
     <div class="search-wrap">
       <input id="search" type="search" placeholder="Filter decisions / nodes…" autocomplete="off" aria-label="Filter decisions and nodes">
     </div>
+    <div class="filters">
+      <div class="filter-row">
+        <select id="status-filter" aria-label="Filter by status"><option value="">All statuses</option></select>
+        <select id="question-filter" aria-label="Filter by question"><option value="">All questions</option></select>
+      </div>
+      <div id="kind-filters" class="kind-filters" aria-label="Filter by record kind"></div>
+      <button id="reset-filters" class="reset-filters" type="button">Reset filters</button>
+    </div>
     <nav class="tabs" aria-label="Views">
       <button data-tab="chain" class="active">Decision chain</button>
       <button data-tab="graph">Graph</button>
@@ -298,6 +338,12 @@
       <div class="graph-toolbar">
         <div class="legend" id="legend"></div>
         <span class="muted">Click a node to inspect it. Edges follow provenance direction.</span>
+        <span id="scroll-hint" class="muted" hidden>Scroll horizontally to see all kinds →</span>
+        <div class="graph-actions">
+          <button id="fit-graph" type="button">Fit width</button>
+          <button id="export-svg" type="button">Export SVG</button>
+          <button id="export-png" type="button">Export PNG</button>
+        </div>
       </div>
       <div class="graph-wrap"><svg id="graph" role="img" aria-label="Project provenance graph"></svg></div>
     </div>
@@ -315,9 +361,10 @@ const KIND = {
   exploration:{ label: "Exploration",color: "var(--x)" },
   experiment: { label: "Experiment", color: "var(--e)" },
   decision:   { label: "Decision",   color: "var(--d)" },
+  figure:     { label: "Figure",     color: "var(--fig)" },
   dataset:    { label: "Dataset",    color: "var(--ds)" }
 };
-const KIND_ORDER = ["question", "exploration", "experiment", "decision", "dataset"];
+const KIND_ORDER = ["question", "exploration", "experiment", "decision", "figure", "dataset"];
 const REL_LABEL = {
   question: "question",
   exploration: "source exploration",
@@ -334,7 +381,9 @@ const state = {
   selected: null,
   focusDecision: null,
   tab: "chain",
-  search: ""
+  search: "",
+  fitGraph: false,
+  filters: { status: "", question: "", kinds: new Set(KIND_ORDER) }
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -368,9 +417,21 @@ function decisionNodes() {
 
 function matchesSearch(node) {
   if (!state.search) return true;
-  const haystack = (node.id + " " + node.title + " " + node.status).toLowerCase();
+  const haystack = (displayId(node) + " " + node.title + " " + node.status).toLowerCase();
   return haystack.includes(state.search);
 }
+
+function matchesFilters(node) {
+  if (!matchesSearch(node)) return false;
+  if (state.filters.status && node.status !== state.filters.status) return false;
+  if (state.filters.question) {
+    if (node.id === state.filters.question) return true;
+    if (!outgoing(node.id, "question").some(edge => edge.target === state.filters.question)) return false;
+  }
+  return true;
+}
+
+function matchesKind(node) { return state.filters.kinds.has(node.kind); }
 
 function outgoing(id, relation = null) {
   return state.data.edges.filter(edge =>
@@ -394,6 +455,8 @@ function sourceNodes(edges) {
 
 function kindLabel(kind) { return (KIND[kind] || { label: kind }).label; }
 
+function displayId(node) { return node.label || node.id; }
+
 function statusDot(status) {
   return '<span class="status-dot ' + escapeHtml(status || "unknown") + '"></span>';
 }
@@ -407,7 +470,7 @@ function nodeCard(node, relation) {
       <span class="node-top">
         <span class="kind-dot"></span>
         <span class="node-kind">${escapeHtml(kindLabel(node.kind))}</span>
-        <code>${escapeHtml(node.id)}</code>
+        <code>${escapeHtml(displayId(node))}</code>
       </span>
       <span class="node-title">${escapeHtml(node.title || "(untitled)")}</span>
       <span class="node-meta">${statusDot(node.status)} ${escapeHtml(node.status || "unknown")}${node.created ? " · " + escapeHtml(node.created) : ""}</span>
@@ -438,9 +501,40 @@ function renderHeader() {
   }
 }
 
+function populateFilters() {
+  const statuses = [...new Set(state.data.nodes.map(node => node.status).filter(Boolean))].sort();
+  $("#status-filter").innerHTML = '<option value="">All statuses</option>' + statuses.map(status =>
+    `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`
+  ).join("");
+
+  const questions = state.data.nodes.filter(node => node.kind === "question").sort(byIdNum);
+  $("#question-filter").innerHTML = '<option value="">All questions</option>' + questions.map(question =>
+    `<option value="${escapeHtml(question.id)}">${escapeHtml(question.id)} · ${escapeHtml(truncate(question.title, 34))}</option>`
+  ).join("");
+
+  $("#kind-filters").innerHTML = KIND_ORDER.map(kind =>
+    `<button class="kind-toggle on" type="button" data-kind="${escapeHtml(kind)}" title="Toggle ${escapeHtml(kindLabel(kind))}">
+      <i style="background:${KIND[kind].color}"></i>${escapeHtml(kindLabel(kind))}
+    </button>`
+  ).join("");
+}
+
+function renderKindFilters() {
+  document.querySelectorAll("#kind-filters [data-kind]").forEach(button => {
+    button.classList.toggle("on", state.filters.kinds.has(button.dataset.kind));
+  });
+}
+
+function refreshFilteredViews() {
+  renderKindFilters();
+  renderDecisionList();
+  if (state.tab === "graph") renderGraph();
+  if (state.tab === "timeline") renderTimeline();
+}
+
 function renderDecisionList() {
   const decisions = decisionNodes();
-  const visible = decisions.filter(matchesSearch);
+  const visible = decisions.filter(matchesFilters);
   $("#decision-count").textContent = visible.length === decisions.length
     ? "(" + decisions.length + ")"
     : "(" + visible.length + "/" + decisions.length + ")";
@@ -574,12 +668,13 @@ function renderDetail() {
   $("#detail").innerHTML = `
     <div class="detail-id">
       <span class="kind-pill">${escapeHtml(kindLabel(node.kind))}</span>
-      <code class="muted">${escapeHtml(node.id)}</code>
+      <code class="muted">${escapeHtml(displayId(node))}</code>
     </div>
     <h2>${escapeHtml(node.title || "(untitled)")}</h2>
     <dl>
       <dt>Status</dt><dd>${statusDot(node.status)} ${escapeHtml(node.status || "unknown")}</dd>
       <dt>Created</dt><dd>${escapeHtml(node.created || "—")}</dd>
+      ${node.approved === undefined ? "" : `<dt>Approved</dt><dd>${node.approved ? "yes" : "no"}</dd>`}
       <dt>Path</dt><dd class="mono">${escapeHtml(node.path || "—")}</dd>
     </dl>
     ${node.kind === "decision" ? '<button class="detail-action" id="focus-chain">Open decision chain</button>' : ""}
@@ -603,12 +698,12 @@ function svgEl(tag, attrs = {}) {
 function renderGraph() {
   const svg = $("#graph");
   svg.innerHTML = "";
-  const nodes = state.data.nodes;
+  const nodes = state.data.nodes.filter(node => matchesFilters(node) && matchesKind(node));
   if (!nodes.length) {
     svg.setAttribute("width", "640");
     svg.setAttribute("height", "160");
     const text = svgEl("text", { x: 24, y: 60, fill: "currentColor", "font-size": 13 });
-    text.textContent = "No records yet.";
+    text.textContent = "No nodes match the current filters.";
     svg.append(text);
     return;
   }
@@ -616,12 +711,13 @@ function renderGraph() {
   const groups = {};
   for (const kind of KIND_ORDER) groups[kind] = [];
   for (const node of nodes) (groups[node.kind] || groups.dataset).push(node);
-  const maxRows = Math.max(...Object.values(groups).map(group => group.length), 1);
+  const visibleKinds = KIND_ORDER.filter(kind => groups[kind].length > 0);
+  const maxRows = Math.max(...visibleKinds.map(kind => groups[kind].length), 1);
 
   const marginX = 58, marginY = 46, colW = 212, rowH = 104, nodeW = 170, nodeH = 58;
   const rowCount = Math.max(maxRows, 1);
   const contentHeight = rowCount * rowH;
-  const width = marginX * 2 + Math.max(KIND_ORDER.length - 1, 1) * colW + nodeW;
+  const width = marginX * 2 + Math.max(visibleKinds.length - 1, 1) * colW + nodeW;
   const height = Math.max(340, marginY * 2 + contentHeight);
   const offsetY = (height - contentHeight) / 2;
   svg.setAttribute("width", String(width));
@@ -643,7 +739,7 @@ function renderGraph() {
   svg.append(defs);
 
   const positions = new Map();
-  KIND_ORDER.forEach((kind, column) => {
+  visibleKinds.forEach((kind, column) => {
     groups[kind].forEach((node, row) => {
       positions.set(node.id, {
         x: marginX + column * colW,
@@ -703,20 +799,118 @@ function renderGraph() {
     });
     group.append(svgEl("rect", { width: nodeW, height: nodeH, rx: 9 }));
     const id = svgEl("text", { x: 11, y: 18, class: "gid" });
-    id.textContent = node.id;
+    id.textContent = displayId(node);
     const title = svgEl("text", { x: 11, y: 35, class: "gtitle" });
     title.textContent = truncate(node.title || "(untitled)", 24);
     const status = svgEl("text", { x: 11, y: 50, class: "gstatus" });
     status.textContent = (KIND[node.kind] || {}).label + " · " + (node.status || "unknown");
     const tooltip = svgEl("title");
-    tooltip.textContent = `${node.id} — ${node.title || "(untitled)"} (${node.status || "unknown"})`;
+    tooltip.textContent = `${displayId(node)} — ${node.title || "(untitled)"} (${node.status || "unknown"})`;
     group.append(id, title, status, tooltip);
     svg.append(group);
   }
+  applyGraphFit();
+}
+
+function applyGraphFit() {
+  const svg = $("#graph");
+  if (!svg) return;
+  if (state.fitGraph) {
+    svg.style.width = "100%";
+    svg.style.height = "auto";
+  } else {
+    svg.style.width = "";
+    svg.style.height = "";
+  }
+  const button = $("#fit-graph");
+  if (button) button.classList.toggle("active", state.fitGraph);
+  const wrap = $(".graph-wrap");
+  const hint = $("#scroll-hint");
+  if (hint && wrap) {
+    hint.hidden = state.fitGraph || svg.getBoundingClientRect().width <= wrap.clientWidth + 1;
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function serializedGraphSvg() {
+  const svg = $("#graph");
+  const clone = svg.cloneNode(true);
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const width = Number(svg.getAttribute("width")) || 640;
+  const height = Number(svg.getAttribute("height")) || 360;
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  const source = [svg, ...svg.querySelectorAll("*")];
+  const target = [clone, ...clone.querySelectorAll("*")];
+  const props = ["fill", "stroke", "stroke-width", "opacity", "font-family", "font-size", "font-weight"];
+  source.forEach((element, index) => {
+    const computed = getComputedStyle(element);
+    props.forEach(prop => {
+      const value = computed.getPropertyValue(prop);
+      if (value && value !== "none") target[index].setAttribute(prop, value);
+    });
+  });
+
+  const panel = getComputedStyle(document.documentElement).getPropertyValue("--panel").trim() || "#ffffff";
+  const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  background.setAttribute("x", "0");
+  background.setAttribute("y", "0");
+  background.setAttribute("width", String(width));
+  background.setAttribute("height", String(height));
+  background.setAttribute("fill", panel);
+  clone.insertBefore(background, clone.firstChild);
+
+  return {
+    text: new XMLSerializer().serializeToString(clone),
+    width,
+    height,
+    background: panel
+  };
+}
+
+function exportGraphSvg() {
+  const graph = serializedGraphSvg();
+  downloadBlob(new Blob([graph.text], { type: "image/svg+xml;charset=utf-8" }), "sciharness-graph.svg");
+}
+
+function exportGraphPng() {
+  const graph = serializedGraphSvg();
+  const blob = new Blob([graph.text], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const image = new Image();
+  image.onload = () => {
+    const scale = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = graph.width * scale;
+    canvas.height = graph.height * scale;
+    const context = canvas.getContext("2d");
+    context.scale(scale, scale);
+    context.fillStyle = graph.background;
+    context.fillRect(0, 0, graph.width, graph.height);
+    context.drawImage(image, 0, 0, graph.width, graph.height);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(output => {
+      if (output) downloadBlob(output, "sciharness-graph.png");
+    }, "image/png");
+  };
+  image.onerror = () => URL.revokeObjectURL(url);
+  image.src = url;
 }
 
 function renderTimeline() {
-  const decisions = decisionNodes().filter(matchesSearch);
+  const decisions = decisionNodes().filter(matchesFilters);
   if (!decisions.length) {
     $("#timeline-view").innerHTML = '<div class="timeline-empty">No decisions to show.</div>';
     return;
@@ -725,15 +919,15 @@ function renderTimeline() {
     const evidence = targetNodes(outgoing(decision.id, "evidence").concat(outgoing(decision.id, "experiment")));
     const downstream = sourceNodes(incoming(decision.id, "motivated_by"));
     const chips = [
-      ...evidence.map(node => `<span class="timeline-chip">${escapeHtml(node.id)} evidence</span>`),
-      ...downstream.map(node => `<span class="timeline-chip">${escapeHtml(node.id)} motivated</span>`)
+      ...evidence.map(node => `<span class="timeline-chip">${escapeHtml(displayId(node))} evidence</span>`),
+      ...downstream.map(node => `<span class="timeline-chip">${escapeHtml(displayId(node))} motivated</span>`)
     ].join("");
     return `
       <button class="timeline-item" data-id="${escapeHtml(decision.id)}">
         <span class="timeline-date">${escapeHtml(decision.created || "—")}</span>
         <span>
           <span class="timeline-title">${escapeHtml(decision.title || "(untitled)")}</span>
-          <span class="timeline-meta"><code>${escapeHtml(decision.id)}</code> · ${escapeHtml(decision.status || "unknown")}</span>
+          <span class="timeline-meta"><code>${escapeHtml(displayId(decision))}</code> · ${escapeHtml(decision.status || "unknown")}</span>
           ${chips ? `<span class="timeline-chips">${chips}</span>` : ""}
         </span>
       </button>`;
@@ -773,9 +967,41 @@ function bindEvents() {
 
   $("#search").addEventListener("input", event => {
     state.search = event.target.value.trim().toLowerCase();
-    renderDecisionList();
-    if (state.tab === "graph") renderGraph();
-    if (state.tab === "timeline") renderTimeline();
+    refreshFilteredViews();
+  });
+
+  $("#status-filter").addEventListener("change", event => {
+    state.filters.status = event.target.value;
+    refreshFilteredViews();
+  });
+
+  $("#question-filter").addEventListener("change", event => {
+    state.filters.question = event.target.value;
+    refreshFilteredViews();
+  });
+
+  $("#kind-filters").addEventListener("click", event => {
+    const button = event.target.closest("[data-kind]");
+    if (!button) return;
+    const kind = button.dataset.kind;
+    const next = new Set(state.filters.kinds);
+    if (next.has(kind)) next.delete(kind); else next.add(kind);
+    state.filters.kinds = next;
+    refreshFilteredViews();
+  });
+
+  $("#reset-filters").addEventListener("click", () => {
+    state.filters = { status: "", question: "", kinds: new Set(KIND_ORDER) };
+    $("#status-filter").value = "";
+    $("#question-filter").value = "";
+    refreshFilteredViews();
+  });
+
+  $("#export-svg").addEventListener("click", exportGraphSvg);
+  $("#export-png").addEventListener("click", exportGraphPng);
+  $("#fit-graph").addEventListener("click", () => {
+    state.fitGraph = !state.fitGraph;
+    applyGraphFit();
   });
 
   document.body.addEventListener("click", event => {
@@ -811,6 +1037,7 @@ async function init() {
     state.selected = state.focusDecision || (data.nodes[0] ? data.nodes[0].id : null);
     renderHeader();
     renderLegend();
+    populateFilters();
     renderDecisionList();
     renderDiagnostics();
     renderDetail();

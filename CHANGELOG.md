@@ -3,6 +3,17 @@
 All notable changes are recorded here. The project is pre-1.0; breaking changes
 are called out explicitly.
 
+## 0.7.0
+
+Web viewer enhancements.
+
+- Figure nodes and their panel evidence links now appear in the provenance
+  graph.
+- Added kind, status, and question filters plus search to the graph, decision
+  list, and timeline.
+- Added Graph export as SVG or PNG with styles inlined.
+- The viewer remains read-only; mutations stay in the CLI.
+
 ## 0.6.0
 
 Read-only web viewer.

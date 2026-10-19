@@ -39,11 +39,21 @@ incoming references.
 
 ### Graph
 
-All questions, explorations, experiments, decisions, and datasets in one
-provenance graph. Nodes are grouped by kind; edges follow provenance direction
-(`evidence`, `motivated_by`, `supersedes`, `question`, `exploration`,
-`datasets`). Clicking a node opens its detail; clicking a decision focuses its
-chain.
+All questions, explorations, experiments, decisions, figures, and datasets in
+one provenance graph. Nodes are grouped by kind; edges follow provenance
+direction (`evidence`, `motivated_by`, `supersedes`, `question`, `exploration`,
+`datasets`). Figure nodes link to the experiments/explorations/datasets declared
+in their manifest panels. Clicking a node opens its detail; clicking a decision
+focuses its chain.
+
+The graph supports:
+
+- **Kind filters** — toggle question/exploration/experiment/decision/figure/
+  dataset;
+- **Status filter** — show only records with one status;
+- **Question filter** — keep a question and records that directly link to it;
+- **Search** — filter by ID, title, or status;
+- **Export SVG / Export PNG** — download the current graph with styles inlined.
 
 ### Timeline
 
@@ -63,12 +73,15 @@ It returns one JSON object:
 ```json
 {
   "schema_version": 1,
-  "project": {"name": "...", "root": "...", "version": "0.6.0"},
+  "project": {"name": "...", "root": "...", "version": "0.7.0"},
   "ok": true,
   "counts": {"question": 1, "decision": 1},
   "nodes": [
     {"id": "D001", "kind": "decision", "title": "...", "status": "active",
-     "created": "2026-10-19", "path": "docs/decisions/D001-....md"}
+     "created": "2026-10-19", "path": "docs/decisions/D001-....md"},
+    {"id": "figure:figure3", "label": "figure3", "kind": "figure",
+     "title": "Figure figure3", "status": "working",
+     "path": "manuscript/figures/figure3", "approved": false}
   ],
   "edges": [
     {"source": "D001", "target": "EXP001", "relation": "evidence", "inverse": "evidenced_by"}

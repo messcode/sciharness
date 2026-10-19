@@ -131,3 +131,46 @@ def test_web_server_serves_ui_and_graph(project):
         server.shutdown()
         server.server_close()
         thread.join(timeout=10)
+
+
+def test_graph_includes_figure_nodes_and_evidence_edges(project):
+    _seed(project)
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    manifest = project / "manuscript" / "figures" / "figure3" / "manifest.yaml"
+    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    data["panels"] = {
+        "A": {
+            "role": "main",
+            "evidence": {"experiment": "EXP001", "explorations": ["X001"]},
+        }
+    }
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    graph = build_graph(project)
+    figure = next(node for node in graph["nodes"] if node["kind"] == "figure")
+    assert figure["label"] == "figure3"
+    assert figure["id"] == "figure:figure3"
+    edge_set = {
+        (edge["source"], edge["target"], edge["relation"])
+        for edge in graph["edges"]
+    }
+    assert ("figure:figure3", "EXP001", "evidence") in edge_set
+    assert ("figure:figure3", "X001", "evidence") in edge_set
+
+
+def test_web_html_contains_filters_and_export_actions(project):
+    _seed(project)
+    server = create_server(project, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urlopen(server_url(server), timeout=10) as response:
+            html = response.read().decode("utf-8")
+        assert "kind-filters" in html
+        assert "status-filter" in html
+        assert "Export SVG" in html
+        assert "Export PNG" in html
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)

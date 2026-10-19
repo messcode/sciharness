@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
+import yaml
+
 from . import __version__
 from .datasets import load_registry
-from .figures import list_figures
+from .figures import FIGURES_DIR, list_figures
 from .output import diagnostics_from_problems
 from .project import (
     KINDS,
@@ -29,7 +31,8 @@ _KIND_ORDER = {
     "exploration": 1,
     "experiment": 2,
     "decision": 3,
-    "dataset": 4,
+    "figure": 4,
+    "dataset": 5,
 }
 
 
@@ -74,6 +77,74 @@ def _dataset_nodes(root: Path) -> List[Dict[str, Any]]:
     return nodes
 
 
+def _figure_nodes(root: Path) -> List[Dict[str, Any]]:
+    """Read figure manifests and turn their evidence links into graph edges."""
+    directory = Path(root) / FIGURES_DIR
+    if not directory.is_dir():
+        return []
+    result: List[Dict[str, Any]] = []
+    for entry in sorted(directory.iterdir(), key=lambda path: path.name):
+        if not entry.is_dir():
+            continue
+        manifest = entry / "manifest.yaml"
+        if not manifest.is_file():
+            continue
+        try:
+            data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        release = data.get("release")
+        approved = (
+            isinstance(release, dict) and release.get("approved") is True
+        )
+        identifier = "figure:{}".format(entry.name)
+        result.append(
+            {
+                "id": identifier,
+                "label": entry.name,
+                "kind": "figure",
+                "title": "Figure {}".format(entry.name),
+                "status": str(data.get("status") or "unknown"),
+                "created": "",
+                "path": relative_path(root, entry),
+                "approved": approved,
+                "evidence": _figure_evidence(data),
+            }
+        )
+    return result
+
+
+def _figure_evidence(data: Dict[str, Any]) -> List[str]:
+    panels = data.get("panels")
+    if not isinstance(panels, dict):
+        return []
+    evidence: List[str] = []
+    for panel in panels.values():
+        if not isinstance(panel, dict):
+            continue
+        raw = panel.get("evidence")
+        if not isinstance(raw, dict):
+            continue
+        values: List[str] = []
+        single = raw.get("experiment")
+        if isinstance(single, str) and single.strip():
+            values.append(single.strip())
+        for field in ("experiments", "explorations", "datasets"):
+            items = raw.get(field)
+            if isinstance(items, list):
+                values.extend(
+                    str(item).strip()
+                    for item in items
+                    if isinstance(item, str) and item.strip()
+                )
+        for value in values:
+            if value not in evidence:
+                evidence.append(value)
+    return evidence
+
+
 def build_graph(root: Path) -> Dict[str, Any]:
     """Build the read-only payload consumed by the web UI."""
     root = Path(root)
@@ -98,6 +169,20 @@ def build_graph(root: Path) -> Dict[str, Any]:
 
     for dataset in _dataset_nodes(root):
         nodes.setdefault(dataset["id"], dataset)
+
+    figure_edges: List[Dict[str, str]] = []
+    for figure in _figure_nodes(root):
+        evidence = figure.pop("evidence", [])
+        nodes.setdefault(figure["id"], figure)
+        for target in evidence:
+            figure_edges.append(
+                {
+                    "source": figure["id"],
+                    "target": target,
+                    "relation": "evidence",
+                    "inverse": "figures",
+                }
+            )
 
     edges: List[Dict[str, str]] = []
     seen: set = set()
@@ -130,6 +215,14 @@ def build_graph(root: Path) -> Dict[str, Any]:
             continue
         for target in _values(record.data.get("datasets")):
             add_edge(source_id, target, "datasets", "experiments")
+
+    for figure_edge in figure_edges:
+        add_edge(
+            figure_edge["source"],
+            figure_edge["target"],
+            figure_edge["relation"],
+            figure_edge["inverse"],
+        )
 
     from .commands.validate import validate_project
 

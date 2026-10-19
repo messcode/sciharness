@@ -28,6 +28,7 @@ PACKAGED_TEMPLATE_PATHS = (
     "sciharness/templates/project/docs/guides/FIGURES.md",
     "sciharness/templates/figure/FIGURE.md",
     "sciharness/templates/figure/manifest.yaml",
+    "sciharness/resources/web/index.html",
 )
 BUILD_TIMEOUT = 300
 

@@ -1,0 +1,258 @@
+"""Read-only local web viewer for decision chains and provenance."""
+from __future__ import annotations
+
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any, Dict, List
+from urllib.parse import urlparse
+
+from . import __version__
+from .datasets import load_registry
+from .figures import list_figures
+from .output import diagnostics_from_problems
+from .project import (
+    KINDS,
+    RELATIONS,
+    ProjectError,
+    id_number,
+    load_config,
+    load_records,
+    relative_path,
+)
+
+WEB_DIR = Path(__file__).resolve().parent / "resources" / "web"
+INDEX_HTML = WEB_DIR / "index.html"
+
+_KIND_ORDER = {
+    "question": 0,
+    "exploration": 1,
+    "experiment": 2,
+    "decision": 3,
+    "dataset": 4,
+}
+
+
+def _values(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _dataset_nodes(root: Path) -> List[Dict[str, Any]]:
+    try:
+        registry = load_registry(root)
+    except ProjectError:
+        return []
+    if registry is None:
+        return []
+    entries = registry.get("datasets")
+    if not isinstance(entries, list):
+        return []
+    nodes: List[Dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        identifier = entry.get("id")
+        if not isinstance(identifier, str) or not identifier.strip():
+            continue
+        storage = entry.get("storage", "local")
+        nodes.append(
+            {
+                "id": identifier.strip(),
+                "kind": "dataset",
+                "title": str(entry.get("name") or identifier),
+                "status": str(storage or "local"),
+                "created": str(entry.get("acquired") or entry.get("created") or ""),
+                "path": str(entry.get("path") or entry.get("uri") or ""),
+                "external": storage == "external",
+            }
+        )
+    return nodes
+
+
+def build_graph(root: Path) -> Dict[str, Any]:
+    """Build the read-only payload consumed by the web UI."""
+    root = Path(root)
+    config = load_config(root)
+    project = config.get("project") if isinstance(config.get("project"), dict) else {}
+    name = str((project or {}).get("name") or root.name)
+
+    records_by_id: Dict[str, Any] = {}
+    nodes: Dict[str, Dict[str, Any]] = {}
+    for kind in KINDS:
+        records, _problems = load_records(root, kind)
+        for record in records:
+            records_by_id[record.id] = record
+            nodes[record.id] = {
+                "id": record.id,
+                "kind": record.kind,
+                "title": record.title,
+                "status": record.status,
+                "created": record.created,
+                "path": relative_path(root, record.path),
+            }
+
+    for dataset in _dataset_nodes(root):
+        nodes.setdefault(dataset["id"], dataset)
+
+    edges: List[Dict[str, str]] = []
+    seen: set = set()
+
+    def add_edge(source: str, target: str, relation: str, inverse: str) -> None:
+        key = (source, target, relation)
+        if key in seen or source not in nodes or target not in nodes:
+            return
+        seen.add(key)
+        edges.append(
+            {
+                "source": source,
+                "target": target,
+                "relation": relation,
+                "inverse": inverse,
+            }
+        )
+
+    for relation in RELATIONS:
+        for source_id, record in records_by_id.items():
+            if record.kind not in relation.sources:
+                continue
+            for target in _values(record.data.get(relation.name)):
+                add_edge(source_id, target, relation.name, relation.inverse)
+
+    # Dataset links are not record-to-record edges, but they belong in the
+    # provenance graph.
+    for source_id, record in records_by_id.items():
+        if record.kind != "experiment":
+            continue
+        for target in _values(record.data.get("datasets")):
+            add_edge(source_id, target, "datasets", "experiments")
+
+    from .commands.validate import validate_project
+
+    diagnostics = diagnostics_from_problems(validate_project(root))
+    figures = [
+        {
+            "id": figure_id,
+            "status": status or "unknown",
+            "approved": approved,
+        }
+        for figure_id, status, approved in list_figures(root)
+    ]
+
+    ordered_nodes = sorted(
+        nodes.values(),
+        key=lambda item: (
+            _KIND_ORDER.get(item["kind"], 99),
+            id_number(item["id"]),
+            item["id"],
+        ),
+    )
+    counts: Dict[str, int] = {}
+    for node in ordered_nodes:
+        counts[node["kind"]] = counts.get(node["kind"], 0) + 1
+
+    timeline = sorted(
+        ordered_nodes,
+        key=lambda item: (item.get("created") or "", _KIND_ORDER.get(item["kind"], 99), item["id"]),
+    )
+
+    return {
+        "schema_version": 1,
+        "project": {
+            "name": name,
+            "root": str(root),
+            "version": __version__,
+        },
+        "ok": not any(item.severity == "error" for item in diagnostics),
+        "counts": counts,
+        "nodes": ordered_nodes,
+        "edges": edges,
+        "timeline": [node["id"] for node in timeline],
+        "figures": figures,
+        "diagnostics": [item.to_dict() for item in diagnostics],
+    }
+
+
+class WebHandler(BaseHTTPRequestHandler):
+    """Serve the embedded UI and a read-only graph API."""
+
+    project_root: Path
+    index_html: str
+    server_version = "sciharness/{}".format(__version__)
+
+    def _send(self, status: int, content_type: str, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, status: int, payload: Dict[str, Any]) -> None:
+        self._send(
+            status,
+            "application/json; charset=utf-8",
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        )
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        path = urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            self._send(200, "text/html; charset=utf-8", self.index_html.encode("utf-8"))
+            return
+        if path == "/api/graph":
+            try:
+                payload = build_graph(self.project_root)
+            except ProjectError as exc:
+                self._json(500, {"error": str(exc)})
+            else:
+                self._json(200, payload)
+            return
+        if path == "/health":
+            self._json(200, {"ok": True, "version": __version__})
+            return
+        self._json(404, {"error": "not found"})
+
+    def log_message(self, format: str, *args: Any) -> None:
+        # A viewer should be quiet; request logging would interleave with the
+        # printed URL and serve no purpose for a local read-only tool.
+        return
+
+
+class WebServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def create_server(
+    root: Path, host: str = "127.0.0.1", port: int = 8765
+) -> WebServer:
+    if not INDEX_HTML.is_file():
+        raise ProjectError("bundled web UI is missing: {}".format(INDEX_HTML))
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    handler = type(
+        "SciHarnessWebHandler",
+        (WebHandler,),
+        {"project_root": Path(root), "index_html": html},
+    )
+    try:
+        return WebServer((host, port), handler)
+    except OSError as exc:
+        raise ProjectError(
+            "cannot start web viewer on {}:{}: {}".format(host, port, exc)
+        ) from exc
+
+
+def server_url(server: WebServer) -> str:
+    host, port = server.server_address[:2]
+    display = str(host)
+    if display in ("0.0.0.0", "::"):
+        display = "127.0.0.1"
+    if ":" in display and not display.startswith("["):
+        display = "[{}]".format(display)
+    return "http://{}:{}/".format(display, port)

@@ -4,4 +4,4 @@ include LICENSE
 include pyproject.toml
 recursive-include docs *.md
 recursive-include src/sciharness/templates *.md *.yaml .gitignore
-recursive-include src/sciharness/resources *.md
+recursive-include src/sciharness/resources *.md *.html

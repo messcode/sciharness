@@ -52,6 +52,7 @@ sciharness = [
   "templates/figure/*.md",
   "templates/figure/*.yaml",
   "resources/skills/*/*.md",
+  "resources/web/*.html",
 ]
 
 [tool.ruff]

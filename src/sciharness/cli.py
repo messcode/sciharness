@@ -21,6 +21,7 @@ from .commands import start as start_command
 from .commands import status as status_command
 from .commands import upgrade as upgrade_command
 from .commands import validate as validate_command
+from .commands import web as web_command
 from .output import EXIT_PROJECT, emit, error_envelope
 from .project import ProjectError
 
@@ -244,6 +245,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Report planned migrations without writing .sci.yaml.",
     )
     migrate_parser.set_defaults(func=migrate_command.run)
+
+    web_parser = subparsers.add_parser(
+        "web",
+        help="Serve a read-only decision-chain viewer",
+        description=(
+            "Serve a read-only local web viewer for the project's decision\n"
+            "chain, provenance graph, and timeline.\n\n"
+            "The server binds to 127.0.0.1 by default and only exposes the\n"
+            "embedded UI plus a read-only graph API. Press Ctrl-C to stop."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_output_arguments(web_parser)
+    web_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address (default: 127.0.0.1; use with care beyond localhost).",
+    )
+    web_parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Port (default: 8765; use 0 for an ephemeral port).",
+    )
+    web_parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open the viewer in the default browser.",
+    )
+    web_parser.set_defaults(func=web_command.run)
 
     new_parser = subparsers.add_parser(
         "new",

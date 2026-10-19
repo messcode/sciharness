@@ -3,6 +3,16 @@
 All notable changes are recorded here. The project is pre-1.0; breaking changes
 are called out explicitly.
 
+## 0.6.0
+
+Read-only web viewer.
+
+- Added `sci web` with a local, dependency-free viewer for the decision chain,
+  full provenance graph, and decision timeline.
+- The viewer exposes only the embedded UI and a read-only `/api/graph` payload;
+  it binds to `127.0.0.1:8765` by default.
+- Added `docs/WEB.md` and packaged the UI asset in wheels/sdists.
+
 ## 0.5.0
 
 Documentation and maintenance release.

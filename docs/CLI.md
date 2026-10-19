@@ -164,6 +164,14 @@ Apply sequential migrations to `.sci.yaml` only. Records, figures, and scaffold
 files keep their own `schema_version` and are handled by `sci upgrade`.
 A newer-than-supported schema is refused.
 
+### `sci web [--host HOST] [--port PORT] [--open] [--json]`
+
+Serve a read-only local viewer for the decision chain, provenance graph, and
+timeline. Defaults to `127.0.0.1:8765`; use `--port 0` for an ephemeral port
+and `--open` to launch the browser. `--json` prints the URL before serving.
+
+See [WEB.md](WEB.md) for the views and `/api/graph` payload.
+
 ### `sci --version`
 
 Print `sci <version>`.

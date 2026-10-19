@@ -31,6 +31,7 @@ def test_top_level_help_lists_commands(capsys):
         "doctor",
         "upgrade",
         "migrate",
+        "web",
         "new",
         "figure",
     ):
@@ -86,3 +87,11 @@ def test_context_and_show_help(capsys):
 
     _help("show")
     assert "record" in capsys.readouterr().out
+
+
+def test_web_help_describes_read_only_viewer(capsys):
+    _help("web")
+    out = capsys.readouterr().out
+    assert "read-only" in out
+    assert "--host" in out
+    assert "--port" in out

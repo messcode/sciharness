@@ -33,15 +33,15 @@ scientific projects; install the CLI once and scaffold projects with it.
 Install a pinned release from GitHub with uv:
 
 ```bash
-uv tool install "git+https://github.com/messcode/sciharness.git@v0.5.0"
+uv tool install "git+https://github.com/messcode/sciharness.git@v0.6.0"
 ```
 
 The same Git URL works with other installers:
 
 ```bash
-pipx install "git+https://github.com/messcode/sciharness.git@v0.5.0"
+pipx install "git+https://github.com/messcode/sciharness.git@v0.6.0"
 # or into the current environment:
-python -m pip install "git+https://github.com/messcode/sciharness.git@v0.5.0"
+python -m pip install "git+https://github.com/messcode/sciharness.git@v0.6.0"
 ```
 
 Check and update:
@@ -100,10 +100,11 @@ sci figure validate figure3 --release
 | `sci doctor [--fix]` | Diagnose structure, scaffold drift, and unclaimed IDs |
 | `sci upgrade [--dry-run] [--force]` | Update managed scaffold files without clobbering edits |
 | `sci migrate [--dry-run]` | Apply `.sci.yaml` schema migrations |
+| `sci web [--host HOST] [--port PORT] [--open]` | Serve a read-only local decision-chain/provenance viewer |
 
 All project commands accept `--path DIR` (default: current directory, searching
 upwards for `.sci.yaml`) and `--json`. IDs are always allocated by the CLI,
-never by hand.
+never by hand. `sci web --json` prints the viewer URL before serving.
 
 ## Agent interface
 
@@ -148,6 +149,7 @@ scaffold.
 - [CLI reference, JSON, exit codes](docs/CLI.md)
 - [File schemas](docs/SCHEMA.md)
 - [Manuscript figures](docs/FIGURES.md)
+- [Web viewer](docs/WEB.md)
 - [Changelog](CHANGELOG.md)
 
 The generated project also contains `docs/guides/FIGURES.md`, `AGENTS.md`, and
@@ -160,13 +162,14 @@ distribution and Skills; v0.2 establishes the filesystem/figure boundary;
 v0.2.1 hardens clone/ID/config/release invariants; v0.3 adds the JSON agent
 interface, backlinks, `doctor`, and `upgrade`; v0.4 adds dataset/run/
 pre-registration provenance and declarative figure layout; v0.5 adds docs,
-`sci migrate`, and maintenance tooling.
+`sci migrate`, and maintenance tooling; v0.6 adds the read-only `sci web`
+decision-chain viewer.
 
 Intentionally **not** included: `sci figure release`, automatic plotting or
 source-data export, pandas/matplotlib dependencies, image comparison, journal
 workbook generation, Git LFS or object-storage integration, manuscript
-submission packaging, graph visualization, Obsidian support, automatic
-`STATE.md` updates, and workflow orchestration. We will dogfood the figure
+submission packaging, Obsidian support, automatic `STATE.md` updates, and
+workflow orchestration. We will dogfood the figure
 workflow on real manuscript figures before designing a generic release command.
 
 ## Development

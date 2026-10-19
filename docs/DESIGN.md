@@ -183,6 +183,13 @@ locally modified ones; `--force` is required to overwrite.
 Project configuration schema changes are separate: `sci migrate` applies
 explicit, sequential migrations to `.sci.yaml`.
 
+## Read-only web viewer
+
+`sci web` serves a dependency-free local viewer for the decision chain,
+provenance graph, and timeline. It is strictly read-only: one embedded UI and a
+`/api/graph` payload, bound to `127.0.0.1` by default. Mutations remain in the
+CLI; the viewer never executes a generator, experiment, or migration.
+
 ## Non-goals
 
 SciHarness intentionally does not provide:

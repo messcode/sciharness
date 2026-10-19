@@ -189,7 +189,7 @@ Managed-file baseline used by `sci doctor` / `sci upgrade`.
 ```json
 {
   "schema_version": 1,
-  "sciharness_version": "0.5.0",
+  "sciharness_version": "0.6.0",
   "scaffold_version": 1,
   "files": {"AGENTS.md": "<sha256>", "...": "..."},
   "pending": ["AGENTS.md"]

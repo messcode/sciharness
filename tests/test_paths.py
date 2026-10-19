@@ -26,7 +26,7 @@ def test_relative_traversal_rejected_without_writing(project, tmp_path, capsys):
     outside = tmp_path / "outside-questions"
     _set_paths(project, questions="../outside-questions")
 
-    assert main(["new", "question", "Escape", "--path", str(project)]) == 1
+    assert main(["new", "question", "Escape", "--path", str(project)]) == 3
     assert not outside.exists()
     captured = capsys.readouterr()
     assert "paths.questions" in captured.err
@@ -37,20 +37,20 @@ def test_absolute_path_rejected_without_writing(project, tmp_path, capsys):
     outside = tmp_path / "abs-questions"
     _set_paths(project, questions=str(outside))
 
-    assert main(["new", "question", "Escape", "--path", str(project)]) == 1
+    assert main(["new", "question", "Escape", "--path", str(project)]) == 3
     assert not outside.exists()
     assert "project-relative" in capsys.readouterr().err
 
 
 def test_windows_absolute_path_rejected(project, capsys):
     _set_paths(project, questions="C:\\outside\\questions")
-    assert main(["new", "question", "Escape", "--path", str(project)]) == 1
+    assert main(["new", "question", "Escape", "--path", str(project)]) == 3
     assert "project-relative" in capsys.readouterr().err
 
 
 def test_home_relative_path_rejected(project, capsys):
     _set_paths(project, questions="~/outside-questions")
-    assert main(["new", "question", "Escape", "--path", str(project)]) == 1
+    assert main(["new", "question", "Escape", "--path", str(project)]) == 3
     assert "project-relative" in capsys.readouterr().err
 
 
@@ -64,7 +64,7 @@ def test_symlink_escape_rejected_without_writing(project, tmp_path, capsys):
         pytest.skip("symlinks are not supported on this platform")
     _set_paths(project, questions="docs/questions-link")
 
-    assert main(["new", "question", "Escape", "--path", str(project)]) == 1
+    assert main(["new", "question", "Escape", "--path", str(project)]) == 3
     assert list(outside.iterdir()) == []
     assert "escapes the project root" in capsys.readouterr().err
 

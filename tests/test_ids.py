@@ -61,7 +61,7 @@ def test_decision_ids_increment(project):
 def test_new_rejects_missing_reference(project, capsys):
     assert main(
         ["new", "exploration", "Broken", "--question", "Q999", "--path", str(project)]
-    ) == 1
+    ) == 3
     assert "Q999" in capsys.readouterr().err
     assert [p for p in (project / "explorations").iterdir() if p.name != ".gitkeep"] == []
 
@@ -117,7 +117,7 @@ def test_experiment_and_decision_links_are_recorded(project):
             "--path",
             str(project),
         ]
-    ) == 1  # D000 does not exist
+    ) == 3  # D000 does not exist
 
 
 def test_slug_handles_punctuation(project):

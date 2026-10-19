@@ -71,12 +71,12 @@ def test_show_accepts_lowercase_id(project, capsys):
 
 
 def test_show_unknown_id_fails(project, capsys):
-    assert main(["show", "Q999", "--path", str(project)]) == 1
+    assert main(["show", "Q999", "--path", str(project)]) == 3
     assert "no question record with id 'Q999'" in capsys.readouterr().err
 
 
 def test_show_unrecognized_id_fails(project, capsys):
-    assert main(["show", "nonsense", "--path", str(project)]) == 1
+    assert main(["show", "nonsense", "--path", str(project)]) == 3
     assert "unrecognized record id" in capsys.readouterr().err
 
 
@@ -93,10 +93,70 @@ def test_show_ambiguous_id_fails(project, capsys):
             "# Q001\n".format(suffix),
             encoding="utf-8",
         )
-    assert main(["show", "Q001", "--path", str(project)]) == 1
+    assert main(["show", "Q001", "--path", str(project)]) == 3
     assert "ambiguous" in capsys.readouterr().err
 
 
 def test_show_outside_a_project_fails(tmp_path, capsys):
-    assert main(["show", "Q001", "--path", str(tmp_path)]) == 1
+    assert main(["show", "Q001", "--path", str(tmp_path)]) == 3
     assert "no .sci.yaml" in capsys.readouterr().err
+
+
+def test_show_related_lists_incoming_references(project, capsys):
+    assert main(["new", "question", "Q", "--path", str(project)]) == 0
+    assert main(
+        ["new", "exploration", "X", "--question", "Q001", "--path", str(project)]
+    ) == 0
+    assert main(
+        [
+            "new",
+            "experiment",
+            "E",
+            "--question",
+            "Q001",
+            "--exploration",
+            "X001",
+            "--path",
+            str(project),
+        ]
+    ) == 0
+    assert main(
+        [
+            "new",
+            "decision",
+            "D",
+            "--evidence",
+            "X001",
+            "--evidence",
+            "EXP001",
+            "--path",
+            str(project),
+        ]
+    ) == 0
+
+    assert main(["show", "X001", "--related", "--path", str(project)]) == 0
+    out = capsys.readouterr().out
+    assert "Referenced by:" in out
+    assert "EXP001" in out
+    assert "D001" in out
+
+
+def test_show_json_includes_relations(project, capsys):
+    import json
+
+    assert main(["new", "question", "Q", "--path", str(project)]) == 0
+    assert main(
+        ["new", "exploration", "X", "--question", "Q001", "--path", str(project)]
+    ) == 0
+    assert main(
+        ["new", "decision", "D", "--evidence", "X001", "--path", str(project)]
+    ) == 0
+    capsys.readouterr()
+
+    assert main(["show", "X001", "--json", "--path", str(project)]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["record"]["references"] == [
+        {"relation": "question", "target": "Q001", "target_kind": "question"}
+    ]
+    assert data["record"]["backlinks"][0]["source"] == "D001"
+    assert data["record"]["backlinks"][0]["relation"] == "evidence"

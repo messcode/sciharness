@@ -6,11 +6,13 @@ pick IDs by hand.
 from __future__ import annotations
 
 import datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 import yaml
 
+from ..output import EXIT_OK, emit, envelope, project_info
 from ..project import (
     EVIDENCE_KINDS,
     ID_PREFIX,
@@ -98,6 +100,15 @@ DECISION_BODY = """# {record_id} — {title}
 """
 
 
+@dataclass
+class CreatedRecord:
+    kind: str
+    id: str
+    path: Path
+    outputs: Optional[Path] = None
+    config: Optional[Path] = None
+
+
 def run(args: Any) -> int:
     root = find_project_root(Path(args.path))
     title = (args.title or "").strip()
@@ -124,18 +135,47 @@ def run(args: Any) -> int:
 
     kind = args.record_kind
     if kind == "question":
-        return _new_question(root, title)
-    if kind == "exploration":
-        return _new_exploration(root, title, question, motivated_by)
-    if kind == "experiment":
-        return _new_experiment(root, title, question, exploration, motivated_by)
-    if kind == "decision":
+        created = _new_question(root, title)
+    elif kind == "exploration":
+        created = _new_exploration(root, title, question, motivated_by)
+    elif kind == "experiment":
+        created = _new_experiment(root, title, question, exploration, motivated_by)
+    elif kind == "decision":
         # ``--experiment`` is a legacy compatibility input for Decision
         # evidence. Merge it into the canonical ``evidence`` list, keeping the
         # first-seen order and dropping duplicates.
         merged = _dedupe(([experiment] if experiment else []) + evidence)
-        return _new_decision(root, title, question, merged, supersedes)
-    raise ProjectError("unknown record kind: {}".format(kind))
+        created = _new_decision(root, title, question, merged, supersedes)
+    else:
+        raise ProjectError("unknown record kind: {}".format(kind))
+
+    created_data: dict = {
+        "kind": created.kind,
+        "id": created.id,
+        "record": relative_path(root, created.path),
+    }
+    if created.config is not None:
+        created_data["config"] = relative_path(root, created.config)
+    if created.outputs is not None:
+        created_data["outputs"] = relative_path(root, created.outputs)
+
+    if getattr(args, "json", False):
+        emit(
+            envelope(
+                "new.{}".format(created.kind),
+                project=project_info(root),
+                data=created_data,
+            )
+        )
+        return EXIT_OK
+
+    print("Created {} {}".format(created.kind, created.id))
+    print("  {}".format(created_data["record"]))
+    if created.config is not None:
+        print("  {}".format(created_data["config"]))
+    if created.outputs is not None:
+        print("  {}".format(created_data["outputs"]))
+    return EXIT_OK
 
 
 def _today() -> str:
@@ -205,11 +245,6 @@ def _write(path: Path, front_matter: Any, body: str) -> None:
     path.write_text(render_record(front_matter, body), encoding="utf-8")
 
 
-def _report(root: Path, path: Path, kind: str, record_id: str) -> None:
-    print("Created {} {}".format(kind, record_id))
-    print("  {}".format(relative_path(root, path)))
-
-
 def _create_output_workspace(
     root: Path, group: str, record_id: str, subdirectories: Any
 ) -> Path:
@@ -225,7 +260,7 @@ def _create_output_workspace(
     return workspace
 
 
-def _new_question(root: Path, title: str) -> int:
+def _new_question(root: Path, title: str) -> CreatedRecord:
     directory = _require_directory(root, "questions")
     record_id = allocate_id(root, "question")
     slug = slugify(title) or record_id
@@ -238,8 +273,7 @@ def _new_question(root: Path, title: str) -> int:
     }
     body = QUESTION_BODY.format(record_id=record_id, title=title)
     _write(path, front, body)
-    _report(root, path, "question", record_id)
-    return 0
+    return CreatedRecord(kind="question", id=record_id, path=path)
 
 
 def _new_exploration(
@@ -247,7 +281,7 @@ def _new_exploration(
     title: str,
     question: Optional[str],
     motivated_by: List[str],
-) -> int:
+) -> CreatedRecord:
     parent = _require_directory(root, "explorations")
     record_id = allocate_id(root, "exploration")
     slug = slugify(title) or record_id
@@ -268,9 +302,9 @@ def _new_exploration(
     workspace = _create_output_workspace(
         root, "explorations", record_id, ("plots", "tables", "logs", "cache")
     )
-    _report(root, note, "exploration", record_id)
-    print("  {}".format(relative_path(root, workspace)))
-    return 0
+    return CreatedRecord(
+        kind="exploration", id=record_id, path=note, outputs=workspace
+    )
 
 
 def _new_experiment(
@@ -279,7 +313,7 @@ def _new_experiment(
     question: Optional[str],
     exploration: Optional[str],
     motivated_by: List[str],
-) -> int:
+) -> CreatedRecord:
     parent = _require_directory(root, "experiments")
     record_id = allocate_id(root, "experiment")
     slug = slugify(title) or record_id
@@ -314,16 +348,19 @@ def _new_experiment(
         + yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
-    _report(root, readme, "experiment", record_id)
-    print("  {}".format(relative_path(root, config_path_)))
     workspace = _create_output_workspace(
         root,
         "experiments",
         record_id,
         ("plots", "tables", "logs", "checkpoints", "cache"),
     )
-    print("  {}".format(relative_path(root, workspace)))
-    return 0
+    return CreatedRecord(
+        kind="experiment",
+        id=record_id,
+        path=readme,
+        outputs=workspace,
+        config=config_path_,
+    )
 
 
 def _new_decision(
@@ -332,7 +369,7 @@ def _new_decision(
     question: Optional[str],
     evidence: List[str],
     supersedes: Optional[str],
-) -> int:
+) -> CreatedRecord:
     directory = _require_directory(root, "decisions")
     record_id = allocate_id(root, "decision")
     slug = slugify(title) or record_id
@@ -351,5 +388,4 @@ def _new_decision(
         front["supersedes"] = supersedes
     body = DECISION_BODY.format(record_id=record_id, title=title)
     _write(path, front, body)
-    _report(root, path, "decision", record_id)
-    return 0
+    return CreatedRecord(kind="decision", id=record_id, path=path)

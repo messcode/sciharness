@@ -45,6 +45,7 @@ EXPECTED_FILES = (
     "docs/guides/FIGURES.md",
     "data/README.md",
     "data/registry.yaml",
+    ".sci/scaffold.json",
 )
 
 
@@ -98,7 +99,7 @@ def test_init_into_non_empty_directory_fails_safely(tmp_path, capsys):
     sentinel = target / "keep.txt"
     sentinel.write_text("keep me\n", encoding="utf-8")
 
-    assert main(["init", str(target), "--name", "Nope", "--no-git"]) == 1
+    assert main(["init", str(target), "--name", "Nope", "--no-git"]) == 3
     assert sentinel.read_text(encoding="utf-8") == "keep me\n"
     assert not (target / ".sci.yaml").exists()
     assert "not empty" in capsys.readouterr().err
@@ -107,7 +108,7 @@ def test_init_into_non_empty_directory_fails_safely(tmp_path, capsys):
 def test_init_into_existing_file_fails(tmp_path, capsys):
     target = tmp_path / "a-file"
     target.write_text("data\n", encoding="utf-8")
-    assert main(["init", str(target), "--name", "Nope", "--no-git"]) == 1
+    assert main(["init", str(target), "--name", "Nope", "--no-git"]) == 3
     assert "not a directory" in capsys.readouterr().err
 
 
@@ -168,6 +169,7 @@ def test_generated_project_has_independent_git_history(tmp_path):
     assert "docs/questions/.gitkeep" in tracked.splitlines()
     assert "experiments/.gitkeep" in tracked.splitlines()
     assert ".sci/ids/.gitkeep" in tracked.splitlines()
+    assert ".sci/scaffold.json" in tracked.splitlines()
     assert not any(line.startswith("outputs/") for line in tracked.splitlines())
 
 
@@ -184,6 +186,8 @@ def test_cloned_project_remains_usable(tmp_path):
     )
 
     assert main(["validate", "--path", str(clone)]) == 0
+    assert main(["doctor", "--path", str(clone)]) == 0
+    assert main(["upgrade", "--path", str(clone), "--dry-run"]) == 0
     assert main(["new", "question", "After clone", "--path", str(clone)]) == 0
     assert (clone / "docs" / "questions" / "Q001-after-clone.md").is_file()
     assert main(["validate", "--path", str(clone)]) == 0
@@ -199,7 +203,7 @@ def test_init_default_fails_when_git_unavailable(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("PATH", str(empty_bin))
     target = tmp_path / "no-git-binary"
 
-    assert main(["init", str(target), "--name", "No Git Binary"]) == 1
+    assert main(["init", str(target), "--name", "No Git Binary"]) == 3
     # The scaffold exists, but init must not claim success.
     assert (target / ".sci.yaml").is_file()
     assert not (target / ".git").exists()
@@ -217,7 +221,7 @@ def test_init_default_fails_when_git_command_fails(tmp_path, monkeypatch, capsys
     monkeypatch.setenv("PATH", str(fake_bin))
     target = tmp_path / "git-fails"
 
-    assert main(["init", str(target), "--name", "Git Fails"]) == 1
+    assert main(["init", str(target), "--name", "Git Fails"]) == 3
     assert (target / ".sci.yaml").is_file()
     assert not (target / ".git").exists()
     captured = capsys.readouterr()

@@ -21,7 +21,17 @@ def test_version_flag_reports_package_version(capsys):
 def test_top_level_help_lists_commands(capsys):
     _help()
     out = capsys.readouterr().out
-    for command in ("init", "status", "context", "show", "validate", "new", "figure"):
+    for command in (
+        "init",
+        "status",
+        "context",
+        "show",
+        "validate",
+        "doctor",
+        "upgrade",
+        "new",
+        "figure",
+    ):
         assert command in out
     assert "Scientific state" in out
 

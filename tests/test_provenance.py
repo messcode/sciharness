@@ -190,7 +190,7 @@ def test_decision_rejects_evidence_of_wrong_type(project, capsys):
     assert main(["new", "question", "Q", "--path", str(project)]) == 0
     assert main(
         ["new", "decision", "D", "--evidence", "Q001", "--path", str(project)]
-    ) == 1
+    ) == 3
     assert "must reference an existing X### or EXP###" in capsys.readouterr().err
 
 
@@ -264,7 +264,7 @@ def test_experiment_rejects_motivated_by_of_wrong_type(project, capsys):
     assert main(["new", "exploration", "X", "--path", str(project)]) == 0
     assert main(
         ["new", "experiment", "E", "--motivated-by", "X001", "--path", str(project)]
-    ) == 1
+    ) == 3
     assert "must reference an existing D###" in capsys.readouterr().err
 
 

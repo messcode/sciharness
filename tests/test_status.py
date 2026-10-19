@@ -34,7 +34,7 @@ def test_status_handles_empty_project(project, capsys):
 
 
 def test_status_outside_a_project_fails(tmp_path, capsys):
-    assert main(["status", "--path", str(tmp_path)]) == 1
+    assert main(["status", "--path", str(tmp_path)]) == 3
     assert "no .sci.yaml" in capsys.readouterr().err
 
 

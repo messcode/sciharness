@@ -16,7 +16,7 @@ keep the historical provenance but trust the newer state.
 
 - Create records with `sci new question|exploration|experiment|decision`.
 - Never invent IDs (Q###, X###, EXP###, D###); `sci` allocates them.
-- Run `sci validate` after structural changes.
+- Run `sci validate` after structural changes; use `sci doctor` for drift.
 - Orient with `sci context`; locate one record with `sci show ID`.
 
 ## Manuscript figures

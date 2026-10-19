@@ -74,6 +74,60 @@ REFERENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
 EVIDENCE_KINDS: Tuple[str, ...] = ("exploration", "experiment")
 MOTIVATED_BY_KINDS: Tuple[str, ...] = ("decision",)
 
+
+@dataclass(frozen=True)
+class Relation:
+    """A provenance edge declared in record front matter."""
+
+    name: str
+    sources: Tuple[str, ...]
+    targets: Tuple[str, ...]
+    inverse: str
+
+
+# The relation registry is the single declaration of the provenance graph.
+# ``sci show --related`` uses it for forward links and reverse traversal; new
+# relations should be added here rather than hard-coded in each command.
+RELATIONS: Tuple[Relation, ...] = (
+    Relation(
+        name="question",
+        sources=("exploration", "experiment", "decision"),
+        targets=("question",),
+        inverse="questions",
+    ),
+    Relation(
+        name="exploration",
+        sources=("experiment",),
+        targets=("exploration",),
+        inverse="experiments",
+    ),
+    Relation(
+        name="evidence",
+        sources=("decision",),
+        targets=("exploration", "experiment"),
+        inverse="evidenced_by",
+    ),
+    Relation(
+        # Legacy v0.1 Decision field; new decisions record it as evidence.
+        name="experiment",
+        sources=("decision",),
+        targets=("experiment",),
+        inverse="evidence_for",
+    ),
+    Relation(
+        name="motivated_by",
+        sources=("exploration", "experiment"),
+        targets=("decision",),
+        inverse="motivated",
+    ),
+    Relation(
+        name="supersedes",
+        sources=("decision",),
+        targets=("decision",),
+        inverse="superseded_by",
+    ),
+)
+
 # Directories created by ``sci init`` even when the scaffold has no files
 # that require them.
 REQUIRED_DIRECTORIES: Tuple[str, ...] = (

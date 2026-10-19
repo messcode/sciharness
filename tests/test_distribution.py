@@ -263,6 +263,11 @@ def test_clean_wheel_supports_v02_workflow(distributions, tmp_path):
     result = run("validate", cwd=project)
     assert result.returncode == 0, result.stderr
 
+    result = run("doctor", cwd=project)
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = run("upgrade", "--dry-run", cwd=project)
+    assert result.returncode == 0, result.stdout + result.stderr
+
     result = run("figure", "init", "figure3", cwd=project)
     assert result.returncode == 0, result.stderr
     result = run("figure", "validate", "figure3", cwd=project)

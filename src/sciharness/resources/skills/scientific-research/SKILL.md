@@ -22,8 +22,11 @@ Before acting:
 3. Read `docs/STATE.md` (current understanding and next actions).
 4. Run `sci status` for active questions, explorations, experiments, and
    recent decisions.
-5. Locate a specific record with `sci show ID` (for example `sci show EXP012`).
-6. Run `sci validate` if files may have drifted.
+5. Locate a specific record with `sci show ID` (for example `sci show EXP012`);
+   add `--related` to see what references it.
+6. Run `sci validate` if files may have drifted; run `sci doctor` if scaffold
+   files or ID claims may have drifted.
+7. Add `--json` when you need machine-readable records, diagnostics, or paths.
 
 ## Bookkeeping rules
 

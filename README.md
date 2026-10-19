@@ -161,8 +161,8 @@ source-data invariant are documented in the generated project's
 | `sci --version` | Report the installed SciHarness package version |
 | `sci init TARGET [--name NAME] [--no-git]` | Create a new project from the bundled scaffold and initialize its own Git repository |
 | `sci status [--path DIR]` | Deterministic summary of active/recent records and validation state |
-| `sci context [--path DIR]` | Deterministic agent routing: which files to read now (charter, state, active records, guidance) |
-| `sci show ID [--path DIR]` | Resolve one record ID (`Q###`/`X###`/`EXP###`/`D###`) to its canonical record and output workspace |
+| `sci context [--path DIR]` | Deterministic agent routing: what to read now, active records, guidance, and diagnostics |
+| `sci show ID [--related] [--path DIR]` | Resolve one record to its canonical path and output workspace; `--related` adds incoming references |
 | `sci new question TITLE` | Create a question at `docs/questions/Q###-slug.md` |
 | `sci new exploration TITLE [--question Q###] [--motivated-by D###]` | Create `explorations/X###-slug/NOTE.md` |
 | `sci new experiment TITLE [--question Q###] [--exploration X###] [--motivated-by D###]` | Create `experiments/EXP###-slug/` with `README.md` and `config.yaml` |
@@ -171,13 +171,66 @@ source-data invariant are documented in the generated project's
 | `sci figure approve FIGURE_ID [--by NAME]` | Record explicit approval plus manifest/FIGURE/artifact hashes at `release/APPROVAL.yaml`; requires `status: validated` |
 | `sci figure validate FIGURE_ID [--release]` | Check figure structure, paths, roles, references; `--release` also checks the approval record and artifact/source-data hashes |
 | `sci validate [--path DIR]` | Check config, expected paths, IDs, required fields, and references |
+| `sci doctor [--fix] [--path DIR]` | Diagnose structure, scaffold drift, and unclaimed IDs; `--fix` backfills claims and adopts a missing baseline |
+| `sci upgrade [--dry-run] [--force] [--path DIR]` | Update managed scaffold files without overwriting local edits; conflicts become `.new` sidecars |
 
 Commands accept `--path DIR` (default: the current directory, searching
-upwards for `.sci.yaml`). IDs are always allocated by the CLI, never by hand.
+upwards for `.sci.yaml`) and `--json` (one machine-readable object). IDs are
+always allocated by the CLI, never by hand.
 
 `sci status`, `sci context`, and `sci show` are intentionally distinct:
 `status` reports which scientific objects exist, `context` reports what an
 agent should read now, and `show` locates one specific record.
+
+### Agent interface
+
+Every project command accepts `--json` and emits one object:
+
+```json
+{
+  "schema_version": 1,
+  "command": "context",
+  "ok": true,
+  "project": {"root": "/path/to/project", "name": "My Study"},
+  "read_first": ["docs/CHARTER.md", "docs/STATE.md"],
+  "active": {"questions": [], "explorations": [], "experiments": []},
+  "recent_decisions": [],
+  "guidance": [],
+  "diagnostics": []
+}
+```
+
+`diagnostics` entries carry `code`, `severity` (`error`/`warning`/`info`),
+`message`, and optional `path`/`field`/`hint`. Exit codes are stable:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | success |
+| `1` | validation failure (records or project structure) |
+| `2` | command-line usage error (from argparse) |
+| `3` | project/config error (missing project, bad reference, invalid state) |
+
+With `--json`, errors are still JSON and use the same exit codes. `sci status`
+and `sci context` return `1` when the project has validation errors; `sci
+doctor` returns `1` when it reports an error. Warnings do not fail the command.
+
+### Scaffold lifecycle
+
+`sci init` records a hash baseline at `.sci/scaffold.json` for managed files
+(project templates and deployed skills). `sci doctor` compares that baseline
+with the current files and the installed package, and reports:
+
+- validation errors;
+- locally modified managed files;
+- managed files that lag behind the installed package;
+- records whose IDs have no permanent claim (fixed by `sci doctor --fix`).
+
+`sci upgrade` updates files whose current hash still matches the baseline.
+Locally modified files are preserved and receive a `.new` sidecar unless
+`--force` is used. A project without a baseline can be adopted explicitly with
+`sci doctor --fix`; adopted files whose content already differs from the package
+are marked pending so a later upgrade still writes sidecars instead of
+overwriting them.
 
 ## Scientific object model
 
@@ -236,6 +289,7 @@ project/
 │           └── SKILL.md
 ├── .sci.yaml
 ├── .sci/
+│   ├── scaffold.json      (managed-file baseline; Git tracked)
 │   └── ids/               (permanent ID claims; Git tracked)
 ├── docs/
 │   ├── CHARTER.md
@@ -420,11 +474,14 @@ outputs, manuscript-figure production, and publication release artifacts.
 v0.2.1 hardens the invariants: clone-safe scaffolds, permanent atomic ID
 claims, a single source of truth for experiment identity, auditable figure
 approval hashes, and a non-zero `sci status` exit code on validation failure.
-Intentionally **not** included in v0.2: `sci figure release`, automatic
+v0.3 adds the agent interface: `--json` for every project command, stable
+diagnostics and exit codes, `show --related`, scaffold baselines, `sci doctor`,
+and non-destructive `sci upgrade`.
+Intentionally **not** included in v0.3: `sci figure release`, automatic
 plotting, automatic source-data CSV export, pandas/matplotlib dependencies,
 source-data inference, image comparison, journal workbook generation, Git LFS
 or external-storage integration, manuscript submission packaging, graph
-visualization, Obsidian support, migrations, `sci doctor`, automatic `STATE`
+visualization, Obsidian support, record/schema migrations, automatic `STATE`
 updates, and any workflow orchestration. We will dogfood the figure workflow on
 real manuscript figures before designing a generic release command.
 

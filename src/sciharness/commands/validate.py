@@ -12,6 +12,14 @@ from typing import Any, Dict, List, Set, Tuple
 
 import yaml
 
+from ..output import (
+    EXIT_OK,
+    EXIT_VALIDATION,
+    diagnostics_from_problems,
+    emit,
+    envelope,
+    project_info,
+)
 from ..project import (
     CONFIG_NAME,
     DIRECTORY_PATH_KEYS,
@@ -304,15 +312,27 @@ def _validate_registry(root: Path) -> List[str]:
 def run(args: Any) -> int:
     root = find_project_root(Path(args.path))
     problems = validate_project(root)
+    diagnostics = diagnostics_from_problems(problems)
+    if getattr(args, "json", False):
+        emit(
+            envelope(
+                "validate",
+                project=project_info(root),
+                ok=not problems,
+                diagnostics=diagnostics,
+                data={"problem_count": len(problems)},
+            )
+        )
+        return EXIT_OK if not problems else EXIT_VALIDATION
     if problems:
         print("Validation failed: {} problem(s) in {}".format(len(problems), root))
         for problem in problems:
             print("  - {}".format(problem))
-        return 1
+        return EXIT_VALIDATION
     print("Validation OK: {}".format(root))
     print(
         "  {} parses; expected paths exist; IDs are unique; references resolve.".format(
             CONFIG_NAME
         )
     )
-    return 0
+    return EXIT_OK

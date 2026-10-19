@@ -171,7 +171,7 @@ def test_figure_init_duplicate_fails_safely(project, capsys):
     figure_md = project / "manuscript" / "figures" / "figure3" / "FIGURE.md"
     sentinel = figure_md.read_text(encoding="utf-8")
 
-    assert main(["figure", "init", "figure3", "--path", str(project)]) == 1
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 3
     assert "already exists" in capsys.readouterr().err
     assert figure_md.read_text(encoding="utf-8") == sentinel
 
@@ -181,7 +181,7 @@ def test_figure_init_duplicate_fails_safely(project, capsys):
     ["../evil", "a/b", "a\\b", ".hidden", "..", "fig 3", ""],
 )
 def test_figure_init_rejects_unsafe_ids(project, figure_id):
-    assert main(["figure", "init", figure_id, "--path", str(project)]) == 1
+    assert main(["figure", "init", figure_id, "--path", str(project)]) == 3
     assert not (project / "manuscript").exists()
 
 
@@ -582,7 +582,7 @@ def test_approve_requires_validated_status(project, capsys):
     assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
     assert main(
         ["figure", "approve", "figure3", "--by", "Reviewer", "--path", str(project)]
-    ) == 1
+    ) == 3
     assert "must be 'validated' before approval" in capsys.readouterr().err
 
 

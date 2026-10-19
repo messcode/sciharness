@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List
@@ -17,6 +18,7 @@ from .project import (
     KINDS,
     RELATIONS,
     ProjectError,
+    config_path,
     id_number,
     load_config,
     load_records,
@@ -34,6 +36,91 @@ _KIND_ORDER = {
     "figure": 4,
     "dataset": 5,
 }
+
+_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+_UPDATED_RE = re.compile(r"^Updated:\s*(\d{4}-\d{2}-\d{2})\s*$", re.MULTILINE)
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_PREFERRED_SECTIONS = {
+    "decision": ("Rationale", "Decision", "Evidence"),
+    "experiment": ("Results", "Interpretation", "Primary estimand", "Design"),
+    "exploration": ("Motivation", "Notes"),
+    "question": ("Question", "Context"),
+}
+_SKIP_SECTIONS = {"relevant outputs", "generated outputs"}
+
+
+def _body(path: Path) -> str:
+    text = Path(path).read_text(encoding="utf-8")
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            newline = text.find("\n", end + 4)
+            text = text[newline + 1:] if newline != -1 else ""
+    return text
+
+
+def _sections(text: str) -> Dict[str, str]:
+    matches = list(_SECTION_RE.finditer(text))
+    result: Dict[str, str] = {}
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        result[match.group(1).strip().lower()] = text[match.end():end].strip()
+    return result
+
+
+def _plain(text: str, limit: int = 280) -> str:
+    text = _COMMENT_RE.sub("", text)
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        stripped = re.sub(r"^[-*]\s+", "", stripped)
+        lines.append(stripped)
+    plain = re.sub(r"\s+", " ", " ".join(lines)).strip()
+    if len(plain) > limit:
+        plain = plain[: limit - 1].rstrip() + "…"
+    return plain
+
+
+def _excerpt(record: Any, limit: int = 280) -> str:
+    try:
+        sections = _sections(_body(record.path))
+    except OSError:
+        return ""
+    for heading in _PREFERRED_SECTIONS.get(record.kind, ()):
+        value = sections.get(heading.lower())
+        if value:
+            plain = _plain(value, limit)
+            if plain:
+                return plain
+    for heading, value in sections.items():
+        if heading in _SKIP_SECTIONS:
+            continue
+        plain = _plain(value, limit)
+        if plain and "Generated artifacts belong under" not in plain:
+            return plain
+    return ""
+
+
+def _state_summary(root: Path, config: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        path = config_path(root, "state")
+    except ProjectError:
+        return {}
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    sections = _sections(text)
+    updated = _UPDATED_RE.search(text)
+    return {
+        "updated": updated.group(1) if updated else "",
+        "current_understanding": _plain(
+            sections.get("current understanding", ""), 520
+        ),
+        "next_actions": _plain(sections.get("next actions", ""), 420),
+        "open_lines": _plain(sections.get("open lines", ""), 420),
+    }
 
 
 def _values(value: Any) -> List[str]:
@@ -72,6 +159,7 @@ def _dataset_nodes(root: Path) -> List[Dict[str, Any]]:
                 "created": str(entry.get("acquired") or entry.get("created") or ""),
                 "path": str(entry.get("path") or entry.get("uri") or ""),
                 "external": storage == "external",
+                "excerpt": str(entry.get("source") or storage or ""),
             }
         )
     return nodes
@@ -110,6 +198,7 @@ def _figure_nodes(root: Path) -> List[Dict[str, Any]]:
                 "created": "",
                 "path": relative_path(root, entry),
                 "approved": approved,
+                "excerpt": "Publication figure",
                 "evidence": _figure_evidence(data),
             }
         )
@@ -165,6 +254,7 @@ def build_graph(root: Path) -> Dict[str, Any]:
                 "status": record.status,
                 "created": record.created,
                 "path": relative_path(root, record.path),
+                "excerpt": _excerpt(record),
             }
 
     for dataset in _dataset_nodes(root):
@@ -266,6 +356,7 @@ def build_graph(root: Path) -> Dict[str, Any]:
         "edges": edges,
         "timeline": [node["id"] for node in timeline],
         "figures": figures,
+        "state": _state_summary(root, config),
         "diagnostics": [item.to_dict() for item in diagnostics],
     }
 

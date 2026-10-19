@@ -6,47 +6,48 @@
 <title>SciHarness — Decision chain</title>
 <style>
   :root {
-    --bg: #f6f7f9;
-    --panel: #ffffff;
-    --panel-soft: #f1f3f7;
-    --ink: #16181d;
-    --muted: #667085;
-    --line: #e3e6ec;
-    --line-strong: #cfd4de;
-    --accent: #6257e8;
-    --accent-soft: #eeecff;
+    --bg: #f7f5f0;
+    --panel: #fffdf9;
+    --panel-soft: #f1ede4;
+    --ink: #1c1b18;
+    --muted: #6e6a61;
+    --line: #e5ded2;
+    --line-strong: #d4cbbb;
+    --accent: #5b4fd6;
+    --accent-soft: #ece8ff;
     --q: #2f6fed;
     --x: #b9690b;
     --e: #0f8a7c;
     --d: #8b3fd1;
-    --ds: #667085;
-    --fig: #b04a1a;
+    --ds: #6e6a61;
+    --fig: #a94a1c;
     --danger: #c52b2b;
     --warn: #a85f06;
     --ok: #177a4b;
-    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px rgba(16, 24, 40, .06);
+    --shadow: 0 1px 2px rgba(45, 38, 28, .05), 0 8px 24px rgba(45, 38, 28, .07);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0d0f14;
-      --panel: #151820;
-      --panel-soft: #1b1f2a;
-      --ink: #eef1f6;
-      --muted: #9aa3b2;
-      --line: #262b36;
-      --line-strong: #363d4b;
-      --accent: #a99cff;
-      --accent-soft: #272144;
+      --bg: #101116;
+      --panel: #17181e;
+      --panel-soft: #1e2027;
+      --ink: #f0ede7;
+      --muted: #a7a196;
+      --line: #2a2b33;
+      --line-strong: #3d3d47;
+      --accent: #b3a6ff;
+      --accent-soft: #2a2446;
       --q: #7aa7ff;
       --x: #f0b35b;
       --e: #4fd1c5;
       --d: #c792ff;
-      --ds: #a0a8b7;
-      --fig: #ffab7a;
+      --ds: #a7a196;
+      --fig: #ffb089;
       --danger: #ff8a8a;
       --warn: #ffc06a;
       --ok: #6ee7b7;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 30px rgba(0, 0, 0, .28);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .3);
     }
   }
   * { box-sizing: border-box; }
@@ -60,16 +61,23 @@
   }
   code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .muted { color: var(--muted); }
+  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+  }
   .topbar {
-    height: 62px;
+    height: 60px;
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
     padding: 0 18px;
     border-bottom: 1px solid var(--line);
     background: var(--panel);
   }
-  .brand { display: flex; align-items: center; gap: 10px; min-width: 240px; }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 210px; max-width: 290px; }
   .mark {
     width: 30px; height: 30px; border-radius: 9px;
     display: grid; place-items: center;
@@ -77,13 +85,13 @@
     background: linear-gradient(145deg, var(--accent), #24b3a7);
   }
   .brand strong { display: block; letter-spacing: -.01em; }
-  .brand #project-name { display: block; font-size: 12px; color: var(--muted); }
-  .counts { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+  .brand #project-name { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 245px; }
+  .counts { display: flex; flex-wrap: nowrap; gap: 5px; flex: 1; overflow: hidden; }
   .count {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 9px; border-radius: 999px;
+    padding: 3px 7px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--panel-soft);
-    color: var(--muted); font-size: 12px;
+    color: var(--muted); font-size: 11px; white-space: nowrap;
   }
   .count b { color: var(--ink); font-weight: 650; }
   .badge {
@@ -100,7 +108,7 @@
   .layout {
     display: grid;
     grid-template-columns: 268px minmax(0, 1fr) 308px;
-    height: calc(100vh - 62px);
+    height: calc(100vh - 60px);
     overflow: hidden;
   }
   .sidebar, .detail {
@@ -118,7 +126,17 @@
     color: var(--ink); font: inherit; outline: none;
   }
   input[type="search"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .filters { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); padding: 8px; margin-bottom: 12px; }
+  .filters { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); margin-bottom: 12px; }
+  .filters summary {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    padding: 7px 9px; color: var(--muted); font-size: 11px; font-weight: 600;
+    list-style: none; user-select: none;
+  }
+  .filters summary::-webkit-details-marker { display: none; }
+  .filters summary::before { content: "▸"; font-size: 9px; transition: transform .15s; }
+  .filters[open] summary::before { transform: rotate(90deg); }
+  .filter-count { color: var(--accent); font-size: 10px; }
+  .filter-body { padding: 0 9px 9px; }
   .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 7px; }
   .filters select {
     width: 100%; min-width: 0; padding: 5px 6px; border-radius: 7px;
@@ -129,7 +147,7 @@
   .kind-toggle {
     display: inline-flex; align-items: center; gap: 4px;
     border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
-    color: var(--muted); padding: 2px 6px; font: inherit; font-size: 10px;
+    color: var(--muted); padding: 2px 6px; font: inherit; font-size: 11px;
     cursor: pointer; opacity: .52;
   }
   .kind-toggle.on { opacity: 1; color: var(--ink); border-color: var(--line-strong); }
@@ -154,8 +172,8 @@
   .decision-item:hover { border-color: var(--line-strong); background: var(--panel-soft); }
   .decision-item.active { border-color: var(--accent); background: var(--accent-soft); }
   .decision-item .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .decision-item .title { margin-top: 3px; font-weight: 600; font-size: 13px; line-height: 1.3; }
-  .decision-item .meta { margin-top: 4px; font-size: 11px; color: var(--muted); }
+  .decision-item .title { margin-top: 3px; font-weight: 640; font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .decision-item .meta { margin-top: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
   .status-dot.active, .status-dot.completed, .status-dot.validated { background: var(--ok); }
   .status-dot.superseded, .status-dot.dropped, .status-dot.abandoned { background: var(--muted); }
@@ -172,8 +190,22 @@
 
   .view { max-width: 1180px; margin: 0 auto; }
   .chain-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
-  .chain-head h1 { font-size: 22px; line-height: 1.2; letter-spacing: -.02em; margin: 3px 0 5px; }
+  .chain-head h1 { font-family: var(--serif); font-size: 30px; line-height: 1.12; letter-spacing: -.025em; margin: 5px 0 7px; max-width: 860px; }
   .chain-head .meta { color: var(--muted); font-size: 12px; }
+  .chain-kicker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--muted); font: 11px ui-monospace, monospace; }
+  .chain-excerpt { max-width: 760px; margin: 12px 0 4px; color: var(--ink); font-size: 14px; line-height: 1.55; opacity: .9; }
+  .chain-counts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 999px; padding: 2px 7px; border: 1px solid var(--line);
+    background: var(--panel-soft); color: var(--muted); font-size: 10px; font-weight: 650;
+    letter-spacing: .02em; white-space: nowrap;
+  }
+  .status-pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .status-pill.active, .status-pill.completed, .status-pill.validated { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 28%, var(--line)); background: color-mix(in srgb, var(--ok) 8%, var(--panel)); }
+  .status-pill.running, .status-pill.planned, .status-pill.open { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 28%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); }
+  .status-pill.superseded, .status-pill.dropped, .status-pill.abandoned { color: var(--muted); }
+  .status-pill.rejected { color: var(--danger); }
   .supersedes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chip {
     display: inline-flex; align-items: center; gap: 5px;
@@ -182,9 +214,9 @@
   }
   .chip:hover { border-color: var(--line-strong); color: var(--ink); }
   .chain-story { display: flex; align-items: stretch; overflow-x: auto; padding: 4px 2px 14px; }
-  .chain-col { min-width: 186px; max-width: 260px; flex: 1 1 0; display: flex; flex-direction: column; gap: 8px; }
+  .chain-col { min-width: 158px; max-width: 280px; flex: 1 1 0; display: flex; flex-direction: column; gap: 8px; }
   .chain-col h3 { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
-  .chain-arrow { width: 34px; display: grid; place-items: center; color: var(--line-strong); font-size: 20px; padding-top: 24px; flex: 0 0 34px; }
+  .chain-arrow { width: 26px; display: grid; place-items: center; color: var(--line-strong); font-size: 18px; padding-top: 24px; flex: 0 0 26px; }
   .chain-col.decision-col .node-card { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .node-card {
     display: block; width: 100%; text-align: left; cursor: pointer;
@@ -192,6 +224,7 @@
     border-radius: 10px; background: var(--panel); color: var(--ink);
     padding: 10px 11px; font: inherit; box-shadow: var(--shadow);
   }
+  .node-card { transition: border-color .15s, transform .15s, box-shadow .15s; }
   .node-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
   .node-card.kind-question { border-left-color: var(--q); }
   .node-card.kind-exploration { border-left-color: var(--x); }
@@ -207,15 +240,29 @@
   .kind-decision .kind-dot { background: var(--d); }
   .kind-dataset .kind-dot { background: var(--ds); }
 .kind-figure .kind-dot { background: var(--fig); }
-  .node-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .node-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
   .node-top code { margin-left: auto; font-size: 10px; color: var(--muted); }
-  .node-title { font-weight: 620; font-size: 13px; line-height: 1.3; margin: 5px 0 3px; overflow-wrap: anywhere; }
-  .node-meta { font-size: 11px; color: var(--muted); }
+  .node-title { font-weight: 640; font-size: 13px; line-height: 1.3; margin: 5px 0 4px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .node-title.single { -webkit-line-clamp: 1; }
+  .node-excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.4; margin: 3px 0 4px; }
+  .node-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
   .relation-chip { display: inline-block; margin-bottom: 4px; font-size: 10px; color: var(--muted); }
   .empty { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 16px; color: var(--muted); font-size: 12px; }
   .empty strong { display: block; color: var(--ink); margin-bottom: 3px; }
+  .research-brief { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .research-brief h2 { font-family: var(--serif); font-size: 19px; font-weight: 600; margin: 0 0 10px; letter-spacing: -.01em; }
+  .brief-grid { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 12px; }
+  .brief-card { border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 12px 13px; }
+  .brief-card h3 { margin: 0 0 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .brief-card p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--ink); opacity: .88; }
+  .brief-card .brief-date { margin-top: 8px; font: 10px ui-monospace, monospace; color: var(--muted); }
+  @media (max-width: 900px) { .brief-grid { grid-template-columns: 1fr; } }
+  .detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+  .detail-actions .detail-action { width: auto; flex: 1 1 auto; }
+  .detail-action.secondary { background: var(--panel); color: var(--muted); border-color: var(--line-strong); }
 
-  .detail h2 { font-size: 16px; margin: 8px 0 6px; line-height: 1.3; overflow-wrap: anywhere; }
+  .detail h2 { font-family: var(--serif); font-size: 19px; margin: 8px 0 6px; line-height: 1.25; overflow-wrap: anywhere; }
+  .detail-excerpt { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 0 0 10px; }
   .detail .detail-id { display: flex; align-items: center; gap: 8px; }
   .detail .kind-pill { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
   .detail dl { display: grid; grid-template-columns: 74px 1fr; gap: 5px 8px; margin: 12px 0 16px; font-size: 12px; }
@@ -230,8 +277,9 @@
     padding: 5px 6px; text-align: left; font: inherit; font-size: 12px; cursor: pointer;
   }
   .link:hover { background: var(--panel-soft); }
-  .link code { color: var(--muted); font-size: 10px; }
-  .link .rel { margin-left: auto; color: var(--muted); font-size: 10px; }
+  .link code { color: var(--muted); font-size: 10px; flex: 0 0 auto; }
+  .link-title { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+  .link .rel { margin-left: auto; color: var(--muted); font-size: 10px; flex: 0 0 auto; }
   .detail-action {
     width: 100%; border: 1px solid var(--accent); background: var(--accent-soft);
     color: var(--accent); border-radius: 8px; padding: 7px 9px;
@@ -284,8 +332,12 @@
   .timeline-empty { color: var(--muted); padding: 24px 0; }
 
   @media (max-width: 1080px) {
-    .layout { grid-template-columns: 240px minmax(0, 1fr); }
-    .detail { display: none; }
+    .layout { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+    .detail {
+      display: block; grid-column: 1 / -1;
+      border-left: 0; border-top: 1px solid var(--line);
+      max-height: 38vh;
+    }
   }
   @media (max-width: 760px) {
     .layout { display: block; height: auto; overflow: visible; }
@@ -314,14 +366,17 @@
     <div class="search-wrap">
       <input id="search" type="search" placeholder="Filter decisions / nodes…" autocomplete="off" aria-label="Filter decisions and nodes">
     </div>
-    <div class="filters">
-      <div class="filter-row">
-        <select id="status-filter" aria-label="Filter by status"><option value="">All statuses</option></select>
-        <select id="question-filter" aria-label="Filter by question"><option value="">All questions</option></select>
+    <details class="filters" id="filter-panel">
+      <summary>Filters <span id="filter-count" class="filter-count"></span></summary>
+      <div class="filter-body">
+        <div class="filter-row">
+          <select id="status-filter" aria-label="Filter by status"><option value="">All statuses</option></select>
+          <select id="question-filter" aria-label="Filter by question"><option value="">All questions</option></select>
+        </div>
+        <div id="kind-filters" class="kind-filters" aria-label="Filter by record kind"></div>
+        <button id="reset-filters" class="reset-filters" type="button">Reset filters</button>
       </div>
-      <div id="kind-filters" class="kind-filters" aria-label="Filter by record kind"></div>
-      <button id="reset-filters" class="reset-filters" type="button">Reset filters</button>
-    </div>
+    </details>
     <nav class="tabs" aria-label="Views">
       <button data-tab="chain" class="active">Decision chain</button>
       <button data-tab="graph">Graph</button>
@@ -383,6 +438,7 @@ const state = {
   tab: "chain",
   search: "",
   fitGraph: false,
+  suppressHash: false,
   filters: { status: "", question: "", kinds: new Set(KIND_ORDER) }
 };
 
@@ -461,9 +517,12 @@ function statusDot(status) {
   return '<span class="status-dot ' + escapeHtml(status || "unknown") + '"></span>';
 }
 
-function nodeCard(node, relation) {
+function nodeCard(node, relation, options = {}) {
   if (!node) return "";
   const selected = state.selected === node.id ? " selected" : "";
+  const excerpt = options.excerpt !== false && node.excerpt
+    ? `<span class="node-excerpt">${escapeHtml(node.excerpt)}</span>`
+    : "";
   return `
     <button class="node-card kind-${escapeHtml(node.kind)}${selected}" data-id="${escapeHtml(node.id)}" title="${escapeHtml(node.title)}">
       ${relation ? `<span class="relation-chip">${escapeHtml(REL_LABEL[relation] || relation)}</span>` : ""}
@@ -472,17 +531,23 @@ function nodeCard(node, relation) {
         <span class="node-kind">${escapeHtml(kindLabel(node.kind))}</span>
         <code>${escapeHtml(displayId(node))}</code>
       </span>
-      <span class="node-title">${escapeHtml(node.title || "(untitled)")}</span>
-      <span class="node-meta">${statusDot(node.status)} ${escapeHtml(node.status || "unknown")}${node.created ? " · " + escapeHtml(node.created) : ""}</span>
+      <span class="node-title${options.single ? " single" : ""}">${escapeHtml(node.title || "(untitled)")}</span>
+      ${excerpt}
+      <span class="node-meta">
+        <span class="status-pill ${escapeHtml(node.status || "unknown")}">${escapeHtml(node.status || "unknown")}</span>
+        ${node.created ? `<span>${escapeHtml(node.created)}</span>` : ""}
+      </span>
     </button>`;
 }
 
 function renderHeader() {
   const data = state.data;
-  $("#project-name").textContent = data.project.name + " · " + data.project.root;
+  $("#project-name").textContent = data.project.name;
+  $("#project-name").title = data.project.root;
+  const short = { question: "Q", exploration: "X", experiment: "EXP", decision: "D", figure: "Fig", dataset: "DS" };
   const counts = Object.entries(data.counts || {})
     .filter(([kind]) => KIND[kind])
-    .map(([kind, count]) => `<span class="count"><i class="kind-dot" style="background:${KIND[kind].color}"></i>${escapeHtml(kindLabel(kind))} <b>${count}</b></span>`)
+    .map(([kind, count]) => `<span class="count" title="${escapeHtml(kindLabel(kind))}"><i class="kind-dot" style="background:${KIND[kind].color};width:6px;height:6px;border-radius:50%;display:inline-block"></i>${escapeHtml(short[kind] || kindLabel(kind))} <b>${count}</b></span>`)
     .join("");
   $("#counts").innerHTML = counts;
 
@@ -523,6 +588,11 @@ function renderKindFilters() {
   document.querySelectorAll("#kind-filters [data-kind]").forEach(button => {
     button.classList.toggle("on", state.filters.kinds.has(button.dataset.kind));
   });
+  const active = (state.filters.status ? 1 : 0)
+    + (state.filters.question ? 1 : 0)
+    + (state.filters.kinds.size < KIND_ORDER.length ? 1 : 0);
+  const label = $("#filter-count");
+  if (label) label.textContent = active ? "(" + active + ")" : "";
 }
 
 function refreshFilteredViews() {
@@ -565,7 +635,7 @@ function renderDecisionList() {
 function renderDiagnostics() {
   const items = (state.data.diagnostics || []).filter(item => item.severity !== "info");
   if (!items.length) {
-    $("#diagnostics").innerHTML = '<h2 class="section-title">Diagnostics</h2><div class="diag"><span class="code">OK</span><span class="msg">No validation problems.</span></div>';
+    $("#diagnostics").innerHTML = "";
     return;
   }
   $("#diagnostics").innerHTML = '<h2 class="section-title">Diagnostics</h2>' + items.map(item => `
@@ -609,13 +679,32 @@ function renderChain() {
     ...newer.map(node => `<button class="chip" data-id="${escapeHtml(node.id)}">superseded by ${escapeHtml(node.id)}</button>`)
   ].join("");
 
+  const research = state.data.state || {};
+  const briefCards = [
+    research.current_understanding ? `<article class="brief-card"><h3>Current understanding</h3><p>${escapeHtml(research.current_understanding)}</p>${research.updated ? `<div class="brief-date">updated ${escapeHtml(research.updated)}</div>` : ""}</article>` : "",
+    research.next_actions ? `<article class="brief-card"><h3>Next actions</h3><p>${escapeHtml(research.next_actions)}</p></article>` : "",
+    research.open_lines ? `<article class="brief-card"><h3>Open lines</h3><p>${escapeHtml(research.open_lines)}</p></article>` : ""
+  ].filter(Boolean).join("");
+  const brief = briefCards
+    ? `<section class="research-brief"><h2>Research brief</h2><div class="brief-grid">${briefCards}</div></section>`
+    : "";
+
   $("#chain-view").innerHTML = `
     <div class="chain-head">
       <div>
-        <div class="meta mono">${escapeHtml(decision.id)} · ${escapeHtml(decision.status || "unknown")}${decision.created ? " · " + escapeHtml(decision.created) : ""}</div>
+        <div class="chain-kicker">
+          <span class="status-pill ${escapeHtml(decision.status || "unknown")}">${escapeHtml(decision.status || "unknown")}</span>
+          <code>${escapeHtml(decision.id)}</code>
+          ${decision.created ? `<span>${escapeHtml(decision.created)}</span>` : ""}
+          <span>${evidence.length} evidence</span>
+          <span>${downstream.length} downstream</span>
+        </div>
         <h1>${escapeHtml(decision.title || "(untitled decision)")}</h1>
-        <div class="meta">${escapeHtml(decision.path || "")}</div>
-        ${supersedes ? `<div class="supersedes">${supersedes}</div>` : ""}
+        ${decision.excerpt ? `<p class="chain-excerpt">${escapeHtml(decision.excerpt)}</p>` : ""}
+        <div class="chain-counts">
+          ${decision.path ? `<span class="muted mono" style="font-size:10px">${escapeHtml(decision.path)}</span>` : ""}
+          ${supersedes ? `<span class="supersedes">${supersedes}</span>` : ""}
+        </div>
       </div>
     </div>
     <div class="chain-story" aria-label="Decision chain">
@@ -631,14 +720,15 @@ function renderChain() {
       <div class="chain-arrow" aria-hidden="true">→</div>
       <section class="chain-col decision-col">
         <h3>Decision</h3>
-        ${nodeCard(decision)}
+        ${nodeCard(decision, null, { excerpt: false })}
       </section>
       <div class="chain-arrow" aria-hidden="true">→</div>
       <section class="chain-col">
         <h3>Motivated work</h3>
         ${downstreamCards}
       </section>
-    </div>`;
+    </div>
+    ${brief}`;
 }
 
 function renderDetail() {
@@ -656,14 +746,24 @@ function renderDetail() {
       const otherId = direction === "out" ? edge.target : edge.source;
       const other = state.byId.get(otherId);
       if (!other) return "";
-      return `<button class="link" data-id="${escapeHtml(other.id)}">
+      return `<button class="link" data-id="${escapeHtml(other.id)}" title="${escapeHtml(other.title)}">
         <span class="kind-dot" style="background:${(KIND[other.kind] || {}).color || "var(--muted)"}"></span>
-        <code>${escapeHtml(other.id)}</code>
-        <span>${escapeHtml(truncate(other.title, 26))}</span>
+        <code>${escapeHtml(displayId(other))}</code>
+        <span class="link-title">${escapeHtml(other.title || "")}</span>
         <span class="rel">${escapeHtml(REL_LABEL[edge.relation] || edge.relation)}</span>
       </button>`;
     }).join("") + '</div>';
   }
+
+  const actions = [];
+  if (node.kind === "decision" && (state.focusDecision !== node.id || state.tab !== "chain")) {
+    actions.push('<button class="detail-action" id="focus-chain">Open decision chain</button>');
+  }
+  if (state.tab !== "graph") {
+    actions.push('<button class="detail-action secondary" id="focus-graph">Focus in graph</button>');
+  }
+  actions.push('<button class="detail-action secondary" id="copy-link">Copy link</button>');
+  actions.push('<button class="detail-action secondary" id="copy-id">Copy ID</button>');
 
   $("#detail").innerHTML = `
     <div class="detail-id">
@@ -671,13 +771,14 @@ function renderDetail() {
       <code class="muted">${escapeHtml(displayId(node))}</code>
     </div>
     <h2>${escapeHtml(node.title || "(untitled)")}</h2>
+    ${node.excerpt ? `<p class="detail-excerpt">${escapeHtml(node.excerpt)}</p>` : ""}
     <dl>
-      <dt>Status</dt><dd>${statusDot(node.status)} ${escapeHtml(node.status || "unknown")}</dd>
+      <dt>Status</dt><dd><span class="status-pill ${escapeHtml(node.status || "unknown")}">${escapeHtml(node.status || "unknown")}</span></dd>
       <dt>Created</dt><dd>${escapeHtml(node.created || "—")}</dd>
       ${node.approved === undefined ? "" : `<dt>Approved</dt><dd>${node.approved ? "yes" : "no"}</dd>`}
       <dt>Path</dt><dd class="mono">${escapeHtml(node.path || "—")}</dd>
     </dl>
-    ${node.kind === "decision" ? '<button class="detail-action" id="focus-chain">Open decision chain</button>' : ""}
+    <div class="detail-actions">${actions.join("")}</div>
     <hr>
     <h3>Outgoing</h3>${links(out, "out")}
     <h3>Incoming</h3>${links(inc, "in")}`;
@@ -795,6 +896,9 @@ function renderGraph() {
     const group = svgEl("g", {
       class: `gnode kind-${node.kind}${selected === node.id ? " selected" : ""}${dim ? " dim" : ""}`,
       "data-id": node.id,
+      tabindex: "0",
+      role: "button",
+      "aria-label": `${displayId(node)} — ${node.title || "(untitled)"}`,
       transform: `translate(${position.x}, ${position.y})`
     });
     group.append(svgEl("rect", { width: nodeW, height: nodeH, rx: 9 }));
@@ -944,6 +1048,7 @@ function selectNode(id, focus = false) {
   if (node.kind === "decision" && focus) renderChain();
   if (state.tab === "graph") renderGraph();
   if (state.tab === "timeline") renderTimeline();
+  updateHash();
 }
 
 function switchTab(tab) {
@@ -957,6 +1062,77 @@ function switchTab(tab) {
   if (tab === "chain") renderChain();
   if (tab === "graph") renderGraph();
   if (tab === "timeline") renderTimeline();
+  updateHash();
+}
+
+function deepLinkFor(node) {
+  if (node.kind === "decision") return "#/decision/" + encodeURIComponent(node.id);
+  return "#/record/" + encodeURIComponent(node.id);
+}
+
+function updateHash() {
+  if (state.suppressHash) return;
+  let hash = "";
+  if (state.tab === "chain") {
+    hash = state.focusDecision ? "#/decision/" + encodeURIComponent(state.focusDecision) : "";
+  } else if (state.tab === "graph") {
+    hash = "#/graph";
+  } else if (state.tab === "timeline") {
+    hash = "#/timeline";
+  }
+  if (hash && location.hash !== hash) {
+    history.replaceState(null, "", hash);
+  }
+}
+
+function applyHash() {
+  const raw = location.hash.replace(/^#\/?/, "");
+  if (!raw) return false;
+  const parts = raw.split("/").filter(Boolean).map(part => {
+    try { return decodeURIComponent(part); } catch (_) { return part; }
+  });
+  state.suppressHash = true;
+  try {
+    if (parts[0] === "decision" && state.byId.has(parts[1])) {
+      state.focusDecision = parts[1];
+      state.selected = parts[1];
+      switchTab("chain");
+      renderDecisionList();
+      renderDetail();
+      return true;
+    }
+    if (parts[0] === "record" && state.byId.has(parts[1])) {
+      state.selected = parts[1];
+      renderDecisionList();
+      switchTab(state.tab);
+      renderDetail();
+      return true;
+    }
+    if (parts[0] === "graph") {
+      switchTab("graph");
+      return true;
+    }
+    if (parts[0] === "timeline") {
+      switchTab("timeline");
+      return true;
+    }
+    return false;
+  } finally {
+    state.suppressHash = false;
+  }
+}
+
+async function copyText(value, button) {
+  try {
+    await navigator.clipboard.writeText(value);
+    if (button) {
+      const previous = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = previous; }, 1200);
+    }
+  } catch (_) {
+    // Clipboard access can be blocked; the record ID/path is still visible.
+  }
 }
 
 function bindEvents() {
@@ -1004,6 +1180,16 @@ function bindEvents() {
     applyGraphFit();
   });
 
+  window.addEventListener("hashchange", () => { applyHash(); });
+
+  document.body.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const gnode = event.target.closest(".gnode");
+    if (!gnode) return;
+    event.preventDefault();
+    selectNode(gnode.dataset.id, gnode.classList.contains("kind-decision"));
+  });
+
   document.body.addEventListener("click", event => {
     const focused = event.target.closest("#focus-chain");
     if (focused && state.selected) {
@@ -1011,6 +1197,23 @@ function bindEvents() {
       switchTab("chain");
       renderDecisionList();
       renderChain();
+      return;
+    }
+    const graphButton = event.target.closest("#focus-graph");
+    if (graphButton && state.selected) {
+      switchTab("graph");
+      selectNode(state.selected, false);
+      return;
+    }
+    const linkButton = event.target.closest("#copy-link");
+    if (linkButton && state.selected) {
+      const node = state.byId.get(state.selected);
+      copyText(location.origin + location.pathname + deepLinkFor(node), linkButton);
+      return;
+    }
+    const idButton = event.target.closest("#copy-id");
+    if (idButton && state.selected) {
+      copyText(displayId(state.byId.get(state.selected)), idButton);
       return;
     }
     const item = event.target.closest("[data-id]");
@@ -1041,8 +1244,11 @@ async function init() {
     renderDecisionList();
     renderDiagnostics();
     renderDetail();
-    switchTab("chain");
     bindEvents();
+    if (!applyHash()) {
+      switchTab("chain");
+    }
+    if (!location.hash) updateHash();
   } catch (error) {
     document.body.innerHTML = `<main style="padding:40px;font-family:system-ui">
       <h1 style="font-size:20px">Cannot load SciHarness graph</h1>

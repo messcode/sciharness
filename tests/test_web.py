@@ -44,8 +44,28 @@ def _seed(project):
     ) == 0
 
 
+def _add_summaries(project):
+    decision = project / "docs" / "decisions" / "D001-d.md"
+    decision.write_text(
+        decision.read_text(encoding="utf-8").replace(
+            "## Rationale\n",
+            "## Rationale\n\nAccumulated forcing explains the protocol contrast.\n",
+        ),
+        encoding="utf-8",
+    )
+    state = project / "docs" / "STATE.md"
+    state.write_text(
+        state.read_text(encoding="utf-8").replace(
+            "## Current understanding\n",
+            "## Current understanding\n\nThe accumulated-forcing model is favored.\n",
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_graph_payload_contains_nodes_edges_and_diagnostics(project):
     _seed(project)
+    _add_summaries(project)
     graph = build_graph(project)
 
     assert graph["schema_version"] == 1
@@ -67,6 +87,9 @@ def test_graph_payload_contains_nodes_edges_and_diagnostics(project):
     assert ("EXP001", "X001", "exploration") in edge_set
     assert ("EXP001", "Q001", "question") in edge_set
     assert graph["timeline"]
+    decision = next(node for node in graph["nodes"] if node["id"] == "D001")
+    assert "accumulated forcing" in decision["excerpt"].lower()
+    assert "accumulated-forcing model" in graph["state"]["current_understanding"].lower()
 
 
 def test_graph_includes_datasets(project):
@@ -170,6 +193,8 @@ def test_web_html_contains_filters_and_export_actions(project):
         assert "status-filter" in html
         assert "Export SVG" in html
         assert "Export PNG" in html
+        assert "research-brief" in html
+        assert "#/decision/" in html
     finally:
         server.shutdown()
         server.server_close()

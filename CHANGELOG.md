@@ -3,6 +3,20 @@
 All notable changes are recorded here. The project is pre-1.0; breaking changes
 are called out explicitly.
 
+## 0.8.0
+
+Web viewer redesign.
+
+- Warmer "research notebook" visual language: compact header, serif decision
+  titles, status pills, and reduced chrome.
+- Decision chain now shows a hero rationale, evidence/result excerpts, and a
+  Research brief sourced from `STATE.md`.
+- Detail panel shows body excerpts, copy-link/copy-ID actions, and a focus-graph
+  action.
+- Added hash deep links (`#/decision/D002`, `#/graph`, `#/timeline`,
+  `#/record/EXP001`).
+- Improved responsive detail layout and keyboard focus for graph nodes.
+
 ## 0.7.0
 
 Web viewer enhancements.

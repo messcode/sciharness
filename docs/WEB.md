@@ -33,9 +33,24 @@ Question  →  Evidence  →  Decision  →  Motivated work
 - **Supersedes** — older/newer decisions are shown as chips and remain
   clickable.
 
+The selected decision is presented as a hero with its rationale excerpt, and
+the chain uses body excerpts from experiments/explorations where available.
+Below the chain, a **Research brief** surfaces `Current understanding`, `Next
+actions`, and `Open lines` from `docs/STATE.md`.
+
 The left sidebar lists decisions with their evidence/downstream counts. The
-right panel shows the selected record's path, status, outgoing references, and
-incoming references.
+right panel shows the selected record's path, status, body excerpt, outgoing
+references, and incoming references. It includes `Copy link`, `Copy ID`, and
+`Focus in graph` actions.
+
+URLs are deep-linkable:
+
+```text
+#/decision/D002   focus a decision chain
+#/record/EXP001   inspect one record
+#/graph           provenance graph
+#/timeline        decision timeline
+```
 
 ### Graph
 
@@ -73,7 +88,7 @@ It returns one JSON object:
 ```json
 {
   "schema_version": 1,
-  "project": {"name": "...", "root": "...", "version": "0.7.0"},
+  "project": {"name": "...", "root": "...", "version": "0.8.0"},
   "ok": true,
   "counts": {"question": 1, "decision": 1},
   "nodes": [
@@ -88,6 +103,12 @@ It returns one JSON object:
   ],
   "timeline": ["Q001", "EXP001", "D001"],
   "figures": [{"id": "figure3", "status": "working", "approved": false}],
+  "state": {
+    "updated": "2026-10-19",
+    "current_understanding": "...",
+    "next_actions": "...",
+    "open_lines": "..."
+  },
   "diagnostics": []
 }
 ```

@@ -33,15 +33,15 @@ scientific projects; install the CLI once and scaffold projects with it.
 Install a pinned release from GitHub with uv:
 
 ```bash
-uv tool install "git+https://github.com/messcode/sciharness.git@v0.7.0"
+uv tool install "git+https://github.com/messcode/sciharness.git@v0.8.0"
 ```
 
 The same Git URL works with other installers:
 
 ```bash
-pipx install "git+https://github.com/messcode/sciharness.git@v0.7.0"
+pipx install "git+https://github.com/messcode/sciharness.git@v0.8.0"
 # or into the current environment:
-python -m pip install "git+https://github.com/messcode/sciharness.git@v0.7.0"
+python -m pip install "git+https://github.com/messcode/sciharness.git@v0.8.0"
 ```
 
 Check and update:
@@ -164,7 +164,8 @@ interface, backlinks, `doctor`, and `upgrade`; v0.4 adds dataset/run/
 pre-registration provenance and declarative figure layout; v0.5 adds docs,
 `sci migrate`, and maintenance tooling; v0.6 adds the read-only `sci web`
 decision-chain viewer; v0.7 adds figure nodes, filters, and SVG/PNG export to
-that viewer.
+that viewer; v0.8 redesigns it around a decision hero, research brief, and
+shareable deep links.
 
 Intentionally **not** included: `sci figure release`, automatic plotting or
 source-data export, pandas/matplotlib dependencies, image comparison, journal

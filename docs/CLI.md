@@ -169,8 +169,10 @@ A newer-than-supported schema is refused.
 Serve a read-only local viewer for the decision chain, provenance graph, and
 timeline. Defaults to `127.0.0.1:8765`; use `--port 0` for an ephemeral port
 and `--open` to launch the browser. `--json` prints the URL before serving.
-The graph includes figure/dataset nodes and supports kind/status/question
-filters plus SVG/PNG export.
+The viewer includes a decision hero with rationale, a STATE-derived research
+brief, figure/dataset nodes, kind/status/question filters, SVG/PNG export, and
+hash deep links (`#/decision/D002`, `#/record/EXP001`, `#/graph`,
+`#/timeline`).
 
 See [WEB.md](WEB.md) for the views and `/api/graph` payload.
 

@@ -34,7 +34,7 @@ Do not load figure guidance for unrelated tasks.
 
 - Source data is immutable once acquired.
 - Generated outputs belong under `outputs/`.
-- Experiment-specific settings belong to that experiment.
+- Pre-register an experiment (`sci start EXP###`) before running it.
 - Historical decisions are append-only; supersede, do not rewrite.
 - Release approval is explicit; never set `release.approved` or `status: released` yourself.
 - Markdown/YAML files and the `sci` CLI work without any skill support.

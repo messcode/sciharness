@@ -12,6 +12,7 @@ from typing import Any, List, Optional, Tuple
 
 import yaml
 
+from ..datasets import dataset_ids
 from ..output import EXIT_OK, emit, envelope, project_info
 from ..project import (
     EVIDENCE_KINDS,
@@ -107,6 +108,7 @@ class CreatedRecord:
     path: Path
     outputs: Optional[Path] = None
     config: Optional[Path] = None
+    datasets: Optional[List[str]] = None
 
 
 def run(args: Any) -> int:
@@ -121,6 +123,7 @@ def run(args: Any) -> int:
     supersedes = _clean(getattr(args, "supersedes", None))
     evidence = _dedupe(getattr(args, "evidence", None) or ())
     motivated_by = _dedupe(getattr(args, "motivated_by", None) or ())
+    datasets = _dedupe(getattr(args, "datasets", None) or ())
 
     if question:
         _require(root, "question", question)
@@ -132,6 +135,7 @@ def run(args: Any) -> int:
         _require(root, "decision", supersedes)
     _require_members(root, evidence, EVIDENCE_KINDS, "evidence")
     _require_members(root, motivated_by, MOTIVATED_BY_KINDS, "motivated-by")
+    _require_datasets(root, datasets)
 
     kind = args.record_kind
     if kind == "question":
@@ -139,7 +143,9 @@ def run(args: Any) -> int:
     elif kind == "exploration":
         created = _new_exploration(root, title, question, motivated_by)
     elif kind == "experiment":
-        created = _new_experiment(root, title, question, exploration, motivated_by)
+        created = _new_experiment(
+            root, title, question, exploration, motivated_by, datasets
+        )
     elif kind == "decision":
         # ``--experiment`` is a legacy compatibility input for Decision
         # evidence. Merge it into the canonical ``evidence`` list, keeping the
@@ -158,6 +164,8 @@ def run(args: Any) -> int:
         created_data["config"] = relative_path(root, created.config)
     if created.outputs is not None:
         created_data["outputs"] = relative_path(root, created.outputs)
+    if created.datasets:
+        created_data["datasets"] = created.datasets
 
     if getattr(args, "json", False):
         emit(
@@ -216,6 +224,18 @@ def _require_members(
                 "--{} must reference an existing {} (got {!r})".format(
                     flag, expected, record_id
                 )
+            )
+
+
+def _require_datasets(root: Path, ids: List[str]) -> None:
+    if not ids:
+        return
+    declared = dataset_ids(root)
+    for record_id in ids:
+        if record_id not in declared:
+            raise ProjectError(
+                "--dataset must reference a dataset declared in "
+                "data/registry.yaml (got {!r})".format(record_id)
             )
 
 
@@ -313,6 +333,7 @@ def _new_experiment(
     question: Optional[str],
     exploration: Optional[str],
     motivated_by: List[str],
+    datasets: List[str],
 ) -> CreatedRecord:
     parent = _require_directory(root, "experiments")
     record_id = allocate_id(root, "experiment")
@@ -331,6 +352,8 @@ def _new_experiment(
         front["exploration"] = exploration
     if motivated_by:
         front["motivated_by"] = motivated_by
+    if datasets:
+        front["datasets"] = datasets
     readme = folder / "README.md"
     _write(readme, front, EXPERIMENT_BODY.format(record_id=record_id, title=title))
     # The machine-readable config holds computational settings only.  Identity,
@@ -360,6 +383,7 @@ def _new_experiment(
         path=readme,
         outputs=workspace,
         config=config_path_,
+        datasets=datasets or None,
     )
 
 

@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+from .datasets import dataset_ids
 from .project import ProjectError, existing_ids, relative_path
 
 MANUSCRIPT_DIR = "manuscript"
@@ -52,16 +53,10 @@ WORKING_SUBDIRECTORIES: Tuple[str, ...] = (
 
 PREVIEW_SUBDIRECTORIES: Tuple[str, ...] = ("previews",)
 
-# Leaf directories that must survive before any artifact exists; ``.gitkeep``
-# files keep the intended (Git tracked) release structure visible.
-RELEASE_LEAF_DIRECTORIES: Tuple[str, ...] = (
-    "release/main/with_legend",
-    "release/main/without_legend_text",
-    "release/supplementary/with_text",
-    "release/supplementary/without_text",
-    "release/caption",
-    "release/source_data",
-)
+# Release layout is declared by manifest paths, not imposed by the scaffold.
+# Init only creates ``release/`` (with a ``.gitkeep`` so Git keeps it); project
+# scripts create the concrete ``release/...`` directories they declare.
+RELEASE_LEAF_DIRECTORIES: Tuple[str, ...] = ("release",)
 
 GITKEEP = ".gitkeep"
 
@@ -471,6 +466,8 @@ def _validate_manifest(
         return problems, [], [], []
 
     experiment_ids = existing_ids(root, "experiment")
+    exploration_ids = existing_ids(root, "exploration")
+    known_datasets = dataset_ids(root)
     seen_outputs: Dict[str, str] = {}
     declared_outputs: List[Tuple[str, str, Path]] = []
     required_source_files: List[Tuple[str, str, Path]] = []
@@ -493,7 +490,12 @@ def _validate_manifest(
 
         problems.extend(
             _validate_evidence(
-                rel_manifest, label, raw_panel.get("evidence"), experiment_ids
+                rel_manifest,
+                label,
+                raw_panel.get("evidence"),
+                experiment_ids,
+                exploration_ids,
+                known_datasets,
             )
         )
         problems.extend(
@@ -547,26 +549,80 @@ def _validate_style_file(root: Path, rel_manifest: str, value: Any) -> List[str]
 
 
 def _validate_evidence(
-    rel_manifest: str, label: str, evidence: Any, experiment_ids: Any
+    rel_manifest: str,
+    label: str,
+    evidence: Any,
+    experiment_ids: Any,
+    exploration_ids: Any,
+    dataset_ids: Any,
 ) -> List[str]:
     if evidence is None:
         return []
     if not isinstance(evidence, dict):
         return ["{}: {}.evidence must be a mapping".format(rel_manifest, label)]
-    experiment = evidence.get("experiment")
-    if experiment is None or (isinstance(experiment, str) and not experiment.strip()):
-        return []
-    if not isinstance(experiment, str):
-        return [
-            "{}: {}.evidence.experiment must be a string ID".format(rel_manifest, label)
-        ]
-    if experiment not in experiment_ids:
-        return [
-            "{}: {}.evidence.experiment {!r} does not exist".format(
-                rel_manifest, label, experiment
+
+    problems: List[str] = []
+    prefix = "{}.evidence".format(label)
+
+    def check_one(field: str, allowed: Any, expected: str) -> None:
+        value = evidence.get(field)
+        if value is None:
+            return
+        if not isinstance(value, str) or not value.strip():
+            problems.append(
+                "{}: {}.{} must be a string ID".format(
+                    rel_manifest, prefix, field
+                )
             )
-        ]
-    return []
+            return
+        if value.strip() not in allowed:
+            problems.append(
+                "{}: {}.{} {!r} does not exist".format(
+                    rel_manifest, prefix, field, value.strip()
+                )
+            )
+
+    def check_many(field: str, allowed: Any, expected: str) -> None:
+        value = evidence.get(field)
+        if value is None:
+            return
+        if not isinstance(value, list):
+            problems.append(
+                "{}: {}.{} must be a list of {} IDs".format(
+                    rel_manifest, prefix, field, expected
+                )
+            )
+            return
+        seen = set()
+        for index, item in enumerate(value):
+            if not isinstance(item, str) or not item.strip():
+                problems.append(
+                    "{}: {}.{}[{}] must be a non-empty string ID".format(
+                        rel_manifest, prefix, field, index
+                    )
+                )
+                continue
+            item = item.strip()
+            if item in seen:
+                problems.append(
+                    "{}: {}.{} contains duplicate ID {!r}".format(
+                        rel_manifest, prefix, field, item
+                    )
+                )
+                continue
+            seen.add(item)
+            if item not in allowed:
+                problems.append(
+                    "{}: {}.{} {!r} does not exist".format(
+                        rel_manifest, prefix, field, item
+                    )
+                )
+
+    check_one("experiment", experiment_ids, "experiment")
+    check_many("experiments", experiment_ids, "experiment")
+    check_many("explorations", exploration_ids, "exploration")
+    check_many("datasets", dataset_ids, "dataset")
+    return problems
 
 
 def _validate_generator(

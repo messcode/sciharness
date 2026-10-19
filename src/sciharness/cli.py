@@ -16,6 +16,7 @@ from .commands import figure as figure_command
 from .commands import init as init_command
 from .commands import new as new_command
 from .commands import show as show_command
+from .commands import start as start_command
 from .commands import status as status_command
 from .commands import upgrade as upgrade_command
 from .commands import validate as validate_command
@@ -156,8 +157,28 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    validate_parser.add_argument(
+        "--verify-hashes",
+        action="store_true",
+        help="Also verify declared local dataset sha256 values.",
+    )
     _add_output_arguments(validate_parser)
     validate_parser.set_defaults(func=validate_command.run)
+
+    start_parser = subparsers.add_parser(
+        "start",
+        help="Start a planned experiment and freeze its pre-registration",
+        description=(
+            "Move a planned experiment to status 'running' and record a hash of\n"
+            "its pre-registered hypotheses, design, estimand, and decision rule\n"
+            "in experiments/EXP###/run.yaml. Editing those sections afterwards\n"
+            "makes `sci validate` fail."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    start_parser.add_argument("record_id", help="Experiment ID, e.g. EXP001.")
+    _add_output_arguments(start_parser)
+    start_parser.set_defaults(func=start_command.run)
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -282,6 +303,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     experiment_parser.add_argument(
         "--exploration", default=None, help="Link an existing exploration, e.g. X001."
+    )
+    experiment_parser.add_argument(
+        "--dataset",
+        dest="datasets",
+        action="append",
+        default=None,
+        metavar="DS###",
+        help=(
+            "Link a dataset declared in data/registry.yaml; repeatable, "
+            "e.g. --dataset DS001."
+        ),
     )
     experiment_parser.add_argument(
         "--motivated-by",

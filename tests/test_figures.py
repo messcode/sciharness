@@ -12,22 +12,10 @@ FIGURE_LEAF_DIRS = (
     "working/cache",
     "working/legacy",
     "previews",
-    "release/main/with_legend",
-    "release/main/without_legend_text",
-    "release/supplementary/with_text",
-    "release/supplementary/without_text",
-    "release/caption",
-    "release/source_data",
+    "release",
 )
 
-RELEASE_GITKEEP_DIRS = (
-    "release/main/with_legend",
-    "release/main/without_legend_text",
-    "release/supplementary/with_text",
-    "release/supplementary/without_text",
-    "release/caption",
-    "release/source_data",
-)
+RELEASE_GITKEEP_DIRS = ("release",)
 
 
 def _write_file(path, text="x\n"):
@@ -812,3 +800,90 @@ def test_validate_detects_duplicate_resolved_release_paths(project, capsys):
     )
     assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
     assert "duplicates release output path" in capsys.readouterr().out
+
+
+def _create_dataset(project, identifier="DS001"):
+    data = project / "data" / "raw" / "run.csv"
+    data.parent.mkdir(parents=True, exist_ok=True)
+    data.write_text("x,y\n1,2\n", encoding="utf-8")
+    registry = {
+        "schema_version": 1,
+        "datasets": [
+            {
+                "id": identifier,
+                "name": "Run",
+                "path": "data/raw/run.csv",
+            }
+        ],
+    }
+    (project / "data" / "registry.yaml").write_text(
+        yaml.safe_dump(registry, sort_keys=False), encoding="utf-8"
+    )
+
+
+def test_validate_accepts_multiple_evidence_ids(project):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _create_experiment(project, "EXP007")
+    _create_experiment(project, "EXP008")
+    _create_dataset(project, "DS001")
+    assert main(["new", "exploration", "X", "--path", str(project)]) == 0
+
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": {
+                    "role": "main",
+                    "evidence": {
+                        "experiments": ["EXP007", "EXP008"],
+                        "explorations": ["X001"],
+                        "datasets": ["DS001"],
+                    },
+                }
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 0
+
+
+def test_validate_rejects_missing_dataset_evidence(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _create_experiment(project, "EXP007")
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": {
+                    "role": "main",
+                    "evidence": {"datasets": ["DS999"]},
+                }
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "DS999" in capsys.readouterr().out
+
+
+def test_validate_rejects_non_list_evidence_collection(project, capsys):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    _write_manifest(
+        project,
+        _manifest(
+            panels={
+                "A": {
+                    "role": "main",
+                    "evidence": {"experiments": "EXP007"},
+                }
+            }
+        ),
+    )
+    assert main(["figure", "validate", "figure3", "--path", str(project)]) == 1
+    assert "must be a list" in capsys.readouterr().out
+
+
+def test_figure_init_does_not_impose_release_subdirectories(project):
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    figure = project / "manuscript" / "figures" / "figure3"
+    assert (figure / "release").is_dir()
+    assert not (figure / "release" / "main").exists()
+    assert not (figure / "release" / "source_data").exists()

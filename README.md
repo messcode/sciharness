@@ -106,6 +106,51 @@ sci new experiment "Test revised prediction" \
 links that Decision to subsequent work. `sci validate` checks that these
 references are structurally valid; it does not judge the science.
 
+## Data and run provenance
+
+`data/registry.yaml` is structurally validated. Each local dataset declares a
+project-relative `path`; external datasets declare a `uri`. IDs are `DS###`,
+must be unique, and can optionally carry a `sha256` checked by
+`sci validate --verify-hashes`.
+
+Experiments link declared datasets from front matter:
+
+```bash
+sci new experiment "Test revised prediction" --dataset DS001
+```
+
+A planned experiment should be started explicitly:
+
+```bash
+sci start EXP001
+```
+
+`sci start` moves `status` to `running`, computes a canonical hash of the
+pre-registered hypotheses, design, estimand, decision rule, and dataset links,
+and writes `experiments/EXP001-<slug>/run.yaml`. Editing those design sections
+afterwards makes `sci validate` fail. Editing Results/Interpretation does not,
+because they are not part of the pre-registration.
+
+`run.yaml` records computational provenance and is optional until a run happens:
+
+```yaml
+schema_version: 1
+record: EXP001
+command: python scripts/run_exp001.py
+code_commit: "<git sha>"
+started_at: "2026-10-19T03:00:00+00:00"
+finished_at: "2026-10-19T05:00:00+00:00"
+environment: {python: "3.12", lockfile_sha256: "<sha>"}
+datasets: [DS001]
+seeds: {numpy: 0}
+outputs_manifest: outputs/experiments/EXP001/manifest.json
+preregistration_sha256: "<hash written by sci start>"
+```
+
+SciHarness validates structure and references only; project scripts are
+responsible for writing run metadata, executing the experiment, and exporting
+outputs.
+
 ## Filesystem layers
 
 SciHarness keeps a clear boundary between four kinds of files:
@@ -165,12 +210,13 @@ source-data invariant are documented in the generated project's
 | `sci show ID [--related] [--path DIR]` | Resolve one record to its canonical path and output workspace; `--related` adds incoming references |
 | `sci new question TITLE` | Create a question at `docs/questions/Q###-slug.md` |
 | `sci new exploration TITLE [--question Q###] [--motivated-by D###]` | Create `explorations/X###-slug/NOTE.md` |
-| `sci new experiment TITLE [--question Q###] [--exploration X###] [--motivated-by D###]` | Create `experiments/EXP###-slug/` with `README.md` and `config.yaml` |
+| `sci new experiment TITLE [--question Q###] [--exploration X###] [--motivated-by D###] [--dataset DS###]` | Create `experiments/EXP###-slug/` with `README.md` and `config.yaml` |
+| `sci start EXP###` | Move a planned experiment to `running`, freeze its pre-registration hash, and create `run.yaml` |
 | `sci new decision TITLE [--question Q###] [--experiment EXP###] [--evidence X###|EXP###] [--supersedes D###]` | Create an append-only decision at `docs/decisions/D###-slug.md` |
 | `sci figure init FIGURE_ID` | Lazily create `manuscript/figures/<id>/` with `FIGURE.md`, `manifest.yaml`, `working/`, `previews/`, and `release/` |
 | `sci figure approve FIGURE_ID [--by NAME]` | Record explicit approval plus manifest/FIGURE/artifact hashes at `release/APPROVAL.yaml`; requires `status: validated` |
 | `sci figure validate FIGURE_ID [--release]` | Check figure structure, paths, roles, references; `--release` also checks the approval record and artifact/source-data hashes |
-| `sci validate [--path DIR]` | Check config, expected paths, IDs, required fields, and references |
+| `sci validate [--verify-hashes] [--path DIR]` | Check config, paths, IDs, references, dataset registry, `run.yaml`, and pre-registration hashes |
 | `sci doctor [--fix] [--path DIR]` | Diagnose structure, scaffold drift, and unclaimed IDs; `--fix` backfills claims and adopts a missing baseline |
 | `sci upgrade [--dry-run] [--force] [--path DIR]` | Update managed scaffold files without overwriting local edits; conflicts become `.new` sidecars |
 
@@ -244,6 +290,8 @@ Exploration         explorations/X001-<slug>/NOTE.md        (lightweight, adapti
    v
 Experiment          experiments/EXP001-<slug>/README.md     (evidence-bearing)
    |                                               config.yaml
+   |                                               run.yaml (after `sci start`)
+   |                                               datasets: [DS###]
    v
 Evidence / interpretation
    |
@@ -257,15 +305,19 @@ STATE update        docs/STATE.md                           (maintained by human
 - **Questions** capture unresolved unknowns. `status: open | answered | dropped`.
 - **Explorations** are cheap, revisable, and may contain adaptive work.
 - **Experiments** are formal tests: competing hypotheses, design, primary
-  estimand, and a falsification/decision rule declared before running. Result
-  fields may be filled in later. Identity, status, and provenance live only in
-  `README.md` front matter; `config.yaml` holds computational settings
-  (`record: EXP###`, parameters, environment) and does not duplicate them.
+  estimand, and a falsification/decision rule declared before running.
+  `sci start EXP###` freezes a hash of those sections and writes `run.yaml`;
+  editing them afterwards fails validation. Result fields may be filled in
+  later. Identity, status, and provenance live only in `README.md` front
+  matter; `config.yaml` holds computational settings (`record: EXP###`,
+  parameters, environment) and does not duplicate them. `datasets: [DS###]`
+  links declared registry entries.
 - **Decisions** record a change in scientific belief, hypothesis status, or
   research direction — not ordinary implementation choices. Supersede rather
   than rewrite: `sci new decision "..." --supersedes D001`.
-- **Runs** are computational provenance; they are not first-class scientific
-  records in the current version.
+- **Runs** are computational provenance recorded in the experiment's
+  `run.yaml` (command, commit, environment, seeds, datasets). They remain
+  attached to an Experiment rather than becoming a separate record type.
 
 Provenance is expressed as relationships between existing scientific objects:
 `evidence` on a Decision, and `motivated_by` on an Exploration or Experiment.
@@ -323,11 +375,13 @@ manuscript/figures/figure3/
 ├── previews/              (ignored)
 └── release/               (tracked)
     ├── APPROVAL.yaml      (written by `sci figure approve`)
-    ├── main/{with_legend, without_legend_text}/
-    ├── supplementary/{with_text, without_text}/
-    ├── caption/
-    └── source_data/
+    └── ...                (outputs/source data declared by manifest.yaml)
 ```
+
+Release layout is **declared, not imposed**: `sci figure init` creates only
+`release/` (plus the mutable `working/` and `previews/` scaffolding). Project
+scripts create the concrete `release/...` directories they declare in the
+manifest, so journals with different layouts are not forced into a fixed tree.
 
 `sci init` copies the template bundled in the Python package, fills the project
 name and creation date, creates the empty directories (with `.gitkeep`
@@ -385,13 +439,20 @@ with `O_CREAT | O_EXCL` (`Q001`, `Q002`, ...; `EXP012`, ...).
 - required fields (`id`, `title`, `status`, `created`) are present and valid;
 - experiment `config.yaml` declares the owning `record: EXP###` (legacy `id`
   and `title` copies are accepted when they agree with the README);
+- `data/registry.yaml` has a supported schema, unique `DS###` IDs, valid
+  local paths or external URIs, and optional hash/date fields;
+- experiment `datasets` reference declared registry entries;
+- an optional `experiments/EXP###/run.yaml` has a matching `record`, valid
+  timestamps/mappings, declared datasets, and a still-matching
+  `preregistration_sha256`;
 - IDs are unique and match filenames;
 - referenced `Q` / `X` / `EXP` / `D` IDs exist, and `supersedes` points
   backwards.
 
-Validation never makes scientific judgments. `sci status` reuses the same
-validator and returns a non-zero exit code when problems exist, so it can be
-used as a health check by agents and CI.
+`sci validate --verify-hashes` additionally recomputes local dataset SHA-256
+hashes. Validation never makes scientific judgments. `sci status` reuses the
+same validator and returns a non-zero exit code when problems exist, so it can
+be used as a health check by agents and CI.
 
 ### Figure validation
 
@@ -400,8 +461,10 @@ judgment: the figure directory and `FIGURE.md` exist, `manifest.yaml` parses,
 `figure_id` matches the directory, statuses and panel roles are valid, declared
 paths are project-relative and stay inside the project, declared release
 outputs and source data do not point into `working/` or `previews/`, release
-output paths are not duplicated, declared evidence experiments exist, and
-declared `generator.file` / `style_file` paths exist.
+output paths are not duplicated, declared evidence experiments, explorations,
+and datasets exist, and declared `generator.file` / `style_file` paths exist.
+A panel may declare `evidence: {experiment: EXP001}` (legacy), or
+`evidence: {experiments: [...], explorations: [...], datasets: [...]}`.
 
 `sci figure validate FIGURE_ID --release` additionally requires
 `status: validated` or `released`, `release.approved: true`, at least one
@@ -476,8 +539,11 @@ claims, a single source of truth for experiment identity, auditable figure
 approval hashes, and a non-zero `sci status` exit code on validation failure.
 v0.3 adds the agent interface: `--json` for every project command, stable
 diagnostics and exit codes, `show --related`, scaffold baselines, `sci doctor`,
-and non-destructive `sci upgrade`.
-Intentionally **not** included in v0.3: `sci figure release`, automatic
+and non-destructive `sci upgrade`. v0.4 adds scientific provenance:
+structurally validated dataset registry entries, experiment dataset links,
+optional `run.yaml` metadata, `sci start` pre-registration hashes, multiple
+figure evidence targets, and a declarative release layout.
+Intentionally **not** included in v0.4: `sci figure release`, automatic
 plotting, automatic source-data CSV export, pandas/matplotlib dependencies,
 source-data inference, image comparison, journal workbook generation, Git LFS
 or external-storage integration, manuscript submission packaging, graph

@@ -5,9 +5,16 @@ schema_version: 1
 # datasets:
 #   - id: DS001
 #     name: trajectory-run-01
-#     path: data/raw/run01.csv
+#     storage: local            # local (default) or external
+#     path: data/raw/run01.csv  # required for local
+#     sha256: "<64-hex>"        # optional; checked by `sci validate --verify-hashes`
 #     source: simulation
-#     created: "2026-02-12"
+#     acquired: "2026-02-12"
+#     license: CC-BY-4.0
 #     notes: Initial forcing sweep.
+#
+# External datasets use `uri:` instead of `path:` and are not copied into Git.
+# Experiments reference datasets with `datasets: [DS001]` in README.md, or
+# `sci new experiment ... --dataset DS001`.
 
 datasets: []

@@ -27,6 +27,7 @@ def test_top_level_help_lists_commands(capsys):
         "context",
         "show",
         "validate",
+        "start",
         "doctor",
         "upgrade",
         "new",

@@ -38,6 +38,7 @@ _FIELD_LABELS: Dict[str, Tuple[Tuple[str, str], ...]] = {
         ("question", "Question"),
         ("exploration", "Source exploration"),
         ("motivated_by", "Motivated by"),
+        ("datasets", "Datasets"),
     ),
     "decision": (
         ("question", "Question"),
@@ -155,6 +156,8 @@ def _target_kind(source_kind: str, relation: str) -> Optional[str]:
     if source_kind == "decision" and relation == "experiment":
         # Legacy compatibility field: recorded as Decision evidence.
         return "experiment"
+    if relation == "datasets":
+        return "dataset"
     for item in RELATIONS:
         if item.name == relation and source_kind in item.sources:
             return item.targets[0] if len(item.targets) == 1 else None

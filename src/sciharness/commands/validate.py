@@ -12,6 +12,11 @@ from typing import Any, Dict, List, Set, Tuple
 
 import yaml
 
+from ..datasets import (
+    dataset_ids,
+    dataset_problems,
+    is_dataset_id,
+)
 from ..output import (
     EXIT_OK,
     EXIT_VALIDATION,
@@ -20,6 +25,7 @@ from ..output import (
     envelope,
     project_info,
 )
+from ..preregistration import preregistration_hash
 from ..project import (
     CONFIG_NAME,
     DIRECTORY_PATH_KEYS,
@@ -43,7 +49,7 @@ from ..project import (
 )
 
 
-def validate_project(root: Path) -> List[str]:
+def validate_project(root: Path, verify_hashes: bool = False) -> List[str]:
     """Return a list of human-readable structural problems (empty when OK)."""
     root = Path(root)
     problems: List[str] = []
@@ -53,6 +59,8 @@ def validate_project(root: Path) -> List[str]:
         return [str(exc)]
 
     problems.extend(_validate_config(root, config))
+    problems.extend(dataset_problems(root, verify_hashes=verify_hashes))
+    declared_datasets = dataset_ids(root)
 
     records_by_kind: Dict[str, List[Record]] = {}
     ids_by_kind: Dict[str, Set[str]] = {}
@@ -97,9 +105,18 @@ def validate_project(root: Path) -> List[str]:
                     )
                 )
             if kind == "experiment":
+                problems.extend(
+                    _check_dataset_list(
+                        rel,
+                        record.data.get("datasets"),
+                        "datasets",
+                        declared_datasets,
+                    )
+                )
                 problems.extend(_validate_experiment_config(root, record))
-
-    problems.extend(_validate_registry(root))
+                problems.extend(
+                    _validate_run_config(root, record, declared_datasets)
+                )
     return problems
 
 
@@ -292,8 +309,63 @@ def _validate_experiment_config(root: Path, record: Record) -> List[str]:
     return problems
 
 
-def _validate_registry(root: Path) -> List[str]:
-    path = root / "data" / "registry.yaml"
+def _check_dataset_list(
+    rel: str, value: Any, field: str, declared: Set[str]
+) -> List[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return ["{}: {} must be a YAML list of dataset IDs".format(rel, field)]
+    problems: List[str] = []
+    seen: Set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            problems.append(
+                "{}: {}[{}] must be a non-empty string".format(rel, field, index)
+            )
+            continue
+        item = item.strip()
+        if not is_dataset_id(item):
+            problems.append(
+                "{}: {}[{}] {!r} must look like DS###".format(
+                    rel, field, index, item
+                )
+            )
+            continue
+        if item in seen:
+            problems.append(
+                "{}: {} contains duplicate dataset ID {!r}".format(
+                    rel, field, item
+                )
+            )
+            continue
+        seen.add(item)
+        if item not in declared:
+            problems.append(
+                "{}: {} {!r} is not declared in data/registry.yaml".format(
+                    rel, field, item
+                )
+            )
+    return problems
+
+
+def _valid_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        datetime.datetime.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_run_config(
+    root: Path, record: Record, declared_datasets: Set[str]
+) -> List[str]:
+    path = record.path.parent / "run.yaml"
     if not path.is_file():
         return []
     rel = relative_path(root, path)
@@ -303,15 +375,93 @@ def _validate_registry(root: Path) -> List[str]:
         return ["{}: invalid YAML: {}".format(rel, exc)]
     if not isinstance(data, dict):
         return ["{}: must contain a YAML mapping".format(rel)]
-    datasets = data.get("datasets")
-    if datasets is not None and not isinstance(datasets, list):
-        return ["{}: datasets must be a list".format(rel)]
-    return []
+
+    problems: List[str] = []
+    if data.get("schema_version") != 1:
+        problems.append("{}: schema_version must be 1".format(rel))
+    if data.get("record") != record.id:
+        problems.append(
+            "{}: record {!r} does not match {}".format(
+                rel, data.get("record"), record.id
+            )
+        )
+
+    command = data.get("command")
+    if command is not None:
+        if isinstance(command, str):
+            if not command.strip():
+                problems.append("{}: command must not be empty".format(rel))
+        elif isinstance(command, list):
+            if not command or any(
+                not isinstance(item, str) or not item.strip()
+                for item in command
+            ):
+                problems.append(
+                    "{}: command must be a non-empty string or list of strings"
+                    .format(rel)
+                )
+        else:
+            problems.append(
+                "{}: command must be a string or list of strings".format(rel)
+            )
+
+    if "code_commit" in data and not isinstance(data["code_commit"], str):
+        problems.append("{}: code_commit must be a string".format(rel))
+    for field in ("started_at", "finished_at"):
+        if field in data and not _valid_timestamp(data[field]):
+            problems.append(
+                "{}: {} must be an ISO timestamp".format(rel, field)
+            )
+    for field in ("environment", "seeds"):
+        if field in data and not isinstance(data[field], dict):
+            problems.append("{}: {} must be a mapping".format(rel, field))
+    problems.extend(
+        _check_dataset_list(rel, data.get("datasets"), "datasets", declared_datasets)
+    )
+
+    manifest_value = data.get("outputs_manifest")
+    if manifest_value is not None:
+        if not isinstance(manifest_value, str) or not manifest_value.strip():
+            problems.append(
+                "{}: outputs_manifest must be a non-empty string".format(rel)
+            )
+        else:
+            try:
+                resolve_project_path(
+                    root, manifest_value, "{}: outputs_manifest".format(rel)
+                )
+            except ProjectError as exc:
+                problems.append(str(exc))
+
+    digest = data.get("preregistration_sha256")
+    if digest is not None:
+        if not isinstance(digest, str) or len(digest.strip()) != 64:
+            problems.append(
+                "{}: preregistration_sha256 must be a 64-character hash".format(
+                    rel
+                )
+            )
+        else:
+            try:
+                expected = preregistration_hash(record)
+            except ProjectError as exc:
+                problems.append("{}: cannot hash pre-registration: {}".format(rel, exc))
+            else:
+                if digest.strip().lower() != expected:
+                    problems.append(
+                        "{}: pre-registration changed after `sci start` "
+                        "(recorded {}, current {})".format(
+                            rel, digest.strip().lower(), expected
+                        )
+                    )
+    return problems
 
 
 def run(args: Any) -> int:
     root = find_project_root(Path(args.path))
-    problems = validate_project(root)
+    problems = validate_project(
+        root, verify_hashes=bool(getattr(args, "verify_hashes", False))
+    )
     diagnostics = diagnostics_from_problems(problems)
     if getattr(args, "json", False):
         emit(

@@ -30,6 +30,7 @@ def test_top_level_help_lists_commands(capsys):
         "start",
         "doctor",
         "upgrade",
+        "migrate",
         "new",
         "figure",
     ):

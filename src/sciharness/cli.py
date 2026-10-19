@@ -14,6 +14,7 @@ from .commands import context as context_command
 from .commands import doctor as doctor_command
 from .commands import figure as figure_command
 from .commands import init as init_command
+from .commands import migrate as migrate_command
 from .commands import new as new_command
 from .commands import show as show_command
 from .commands import start as start_command
@@ -224,6 +225,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite locally modified managed files instead of writing .new.",
     )
     upgrade_parser.set_defaults(func=upgrade_command.run)
+
+    migrate_parser = subparsers.add_parser(
+        "migrate",
+        help="Migrate .sci.yaml to the supported schema version",
+        description=(
+            "Apply explicit, sequential project-config migrations.\n\n"
+            "Migrates only .sci.yaml; records, figures, and scaffold files are\n"
+            "handled by `sci upgrade` and their own schema_version fields. Use\n"
+            "--dry-run to inspect the planned changes."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_output_arguments(migrate_parser)
+    migrate_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report planned migrations without writing .sci.yaml.",
+    )
+    migrate_parser.set_defaults(func=migrate_command.run)
 
     new_parser = subparsers.add_parser(
         "new",

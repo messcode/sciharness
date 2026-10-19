@@ -34,12 +34,23 @@ BUILD_TIMEOUT = 300
 
 def _copy_source_tree(destination):
     destination.mkdir(parents=True, exist_ok=True)
-    for name in ("pyproject.toml", "README.md", "MANIFEST.in", "LICENSE"):
+    for name in (
+        "pyproject.toml",
+        "README.md",
+        "MANIFEST.in",
+        "LICENSE",
+        "CHANGELOG.md",
+    ):
         shutil.copy2(REPO_ROOT / name, destination / name)
     shutil.copytree(
         REPO_ROOT / "src",
         destination / "src",
         ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"),
+    )
+    shutil.copytree(
+        REPO_ROOT / "docs",
+        destination / "docs",
+        ignore=shutil.ignore_patterns("__pycache__"),
     )
 
 
@@ -99,6 +110,19 @@ def test_sdist_contains_figure_skill_and_templates(distributions):
         names = archive.getnames()
     assert any(name.endswith(SCIENTIFIC_FIGURES_SKILL) for name in names)
     for relative in PACKAGED_TEMPLATE_PATHS:
+        assert any(name.endswith(relative) for name in names), relative
+
+
+def test_sdist_contains_docs_and_changelog(distributions):
+    with tarfile.open(str(distributions["sdist"])) as archive:
+        names = archive.getnames()
+    for relative in (
+        "docs/DESIGN.md",
+        "docs/CLI.md",
+        "docs/SCHEMA.md",
+        "docs/FIGURES.md",
+        "CHANGELOG.md",
+    ):
         assert any(name.endswith(relative) for name in names), relative
 
 

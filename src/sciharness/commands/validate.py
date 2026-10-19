@@ -122,10 +122,25 @@ def validate_project(root: Path, verify_hashes: bool = False) -> List[str]:
 
 def _validate_config(root: Path, config: Dict[str, Any]) -> List[str]:
     problems: List[str] = []
-    if config.get("schema_version") != SUPPORTED_SCHEMA_VERSION:
-        problems.append(
-            "{}: schema_version must be {}".format(CONFIG_NAME, SUPPORTED_SCHEMA_VERSION)
-        )
+    version = config.get("schema_version")
+    if version != SUPPORTED_SCHEMA_VERSION:
+        if version is None:
+            problems.append(
+                "{}: schema_version is missing (run `sci migrate`)".format(
+                    CONFIG_NAME
+                )
+            )
+        elif isinstance(version, int) and version < SUPPORTED_SCHEMA_VERSION:
+            problems.append(
+                "{}: schema_version {} is older than {} (run `sci migrate`)"
+                .format(CONFIG_NAME, version, SUPPORTED_SCHEMA_VERSION)
+            )
+        else:
+            problems.append(
+                "{}: schema_version must be {}".format(
+                    CONFIG_NAME, SUPPORTED_SCHEMA_VERSION
+                )
+            )
     project = config.get("project")
     if not isinstance(project, dict):
         problems.append("{}: project must be a mapping".format(CONFIG_NAME))

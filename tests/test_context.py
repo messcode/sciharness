@@ -104,7 +104,7 @@ def test_context_omits_figure_guidance_when_absent(project, capsys):
 
 
 def test_context_outside_a_project_fails(tmp_path, capsys):
-    assert main(["context", "--path", str(tmp_path)]) == 1
+    assert main(["context", "--path", str(tmp_path)]) == 3
     assert "no .sci.yaml" in capsys.readouterr().err
 
 
@@ -126,3 +126,23 @@ def test_old_v011_project_supports_navigation(project, capsys):
     out = capsys.readouterr().out
     assert "Q001" in out
     assert "Conditional guidance" not in out
+
+
+def test_context_warns_when_state_is_stale(project, capsys):
+    assert main(["new", "question", "Q", "--path", str(project)]) == 0
+    state = project / "docs" / "STATE.md"
+    lines = [
+        "Updated: 2020-01-01" if line.startswith("Updated:") else line
+        for line in state.read_text(encoding="utf-8").splitlines()
+    ]
+    state.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    assert main(["context", "--path", str(project)]) == 0
+    out = capsys.readouterr().out
+    assert "STATE_STALE" in out
+
+
+def test_context_returns_nonzero_when_project_has_errors(project, capsys):
+    (project / "docs" / "STATE.md").unlink()
+    assert main(["context", "--path", str(project)]) == 1
+    assert "NOT_FOUND" in capsys.readouterr().out

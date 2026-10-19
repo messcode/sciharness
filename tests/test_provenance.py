@@ -190,7 +190,7 @@ def test_decision_rejects_evidence_of_wrong_type(project, capsys):
     assert main(["new", "question", "Q", "--path", str(project)]) == 0
     assert main(
         ["new", "decision", "D", "--evidence", "Q001", "--path", str(project)]
-    ) == 1
+    ) == 3
     assert "must reference an existing X### or EXP###" in capsys.readouterr().err
 
 
@@ -233,7 +233,11 @@ def test_experiment_motivated_by_single(project):
     config = yaml.safe_load(
         (_experiment_path(project).parent / "config.yaml").read_text(encoding="utf-8")
     )
-    assert config["motivated_by"] == ["D001"]
+    # Identity and provenance have one source: README.md front matter.
+    assert config["record"] == "EXP001"
+    assert "motivated_by" not in config
+    assert "title" not in config
+    assert "status" not in config
 
 
 def test_experiment_motivated_by_multiple(project):
@@ -260,7 +264,7 @@ def test_experiment_rejects_motivated_by_of_wrong_type(project, capsys):
     assert main(["new", "exploration", "X", "--path", str(project)]) == 0
     assert main(
         ["new", "experiment", "E", "--motivated-by", "X001", "--path", str(project)]
-    ) == 1
+    ) == 3
     assert "must reference an existing D###" in capsys.readouterr().err
 
 

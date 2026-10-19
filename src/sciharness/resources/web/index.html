@@ -1,0 +1,1264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SciHarness — Decision chain</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --panel: #fffdf9;
+    --panel-soft: #f1ede4;
+    --ink: #1c1b18;
+    --muted: #6e6a61;
+    --line: #e5ded2;
+    --line-strong: #d4cbbb;
+    --accent: #5b4fd6;
+    --accent-soft: #ece8ff;
+    --q: #2f6fed;
+    --x: #b9690b;
+    --e: #0f8a7c;
+    --d: #8b3fd1;
+    --ds: #6e6a61;
+    --fig: #a94a1c;
+    --danger: #c52b2b;
+    --warn: #a85f06;
+    --ok: #177a4b;
+    --shadow: 0 1px 2px rgba(45, 38, 28, .05), 0 8px 24px rgba(45, 38, 28, .07);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101116;
+      --panel: #17181e;
+      --panel-soft: #1e2027;
+      --ink: #f0ede7;
+      --muted: #a7a196;
+      --line: #2a2b33;
+      --line-strong: #3d3d47;
+      --accent: #b3a6ff;
+      --accent-soft: #2a2446;
+      --q: #7aa7ff;
+      --x: #f0b35b;
+      --e: #4fd1c5;
+      --d: #c792ff;
+      --ds: #a7a196;
+      --fig: #ffb089;
+      --danger: #ff8a8a;
+      --warn: #ffc06a;
+      --ok: #6ee7b7;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px rgba(0, 0, 0, .3);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .muted { color: var(--muted); }
+  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+  }
+  .topbar {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 210px; max-width: 290px; }
+  .mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    display: grid; place-items: center;
+    color: #fff; font-weight: 800; font-size: 15px;
+    background: linear-gradient(145deg, var(--accent), #24b3a7);
+  }
+  .brand strong { display: block; letter-spacing: -.01em; }
+  .brand #project-name { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 245px; }
+  .counts { display: flex; flex-wrap: nowrap; gap: 5px; flex: 1; overflow: hidden; }
+  .count {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 7px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel-soft);
+    color: var(--muted); font-size: 11px; white-space: nowrap;
+  }
+  .count b { color: var(--ink); font-weight: 650; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    border-radius: 999px; padding: 5px 11px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+    border: 1px solid var(--line);
+  }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+  .badge.bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+  .badge.neutral { color: var(--muted); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 268px minmax(0, 1fr) 308px;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+  }
+  .sidebar, .detail {
+    background: var(--panel);
+    overflow-y: auto;
+    padding: 14px;
+  }
+  .sidebar { border-right: 1px solid var(--line); }
+  .detail { border-left: 1px solid var(--line); }
+  .content { overflow: auto; padding: 22px 24px 40px; min-width: 0; }
+  .search-wrap { margin-bottom: 12px; }
+  input[type="search"] {
+    width: 100%; padding: 8px 10px; border-radius: 9px;
+    border: 1px solid var(--line-strong); background: var(--panel-soft);
+    color: var(--ink); font: inherit; outline: none;
+  }
+  input[type="search"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .filters { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); margin-bottom: 12px; }
+  .filters summary {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    padding: 7px 9px; color: var(--muted); font-size: 11px; font-weight: 600;
+    list-style: none; user-select: none;
+  }
+  .filters summary::-webkit-details-marker { display: none; }
+  .filters summary::before { content: "▸"; font-size: 9px; transition: transform .15s; }
+  .filters[open] summary::before { transform: rotate(90deg); }
+  .filter-count { color: var(--accent); font-size: 10px; }
+  .filter-body { padding: 0 9px 9px; }
+  .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 7px; }
+  .filters select {
+    width: 100%; min-width: 0; padding: 5px 6px; border-radius: 7px;
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink);
+    font: inherit; font-size: 11px; outline: none;
+  }
+  .kind-filters { display: flex; flex-wrap: wrap; gap: 4px; }
+  .kind-toggle {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+    color: var(--muted); padding: 2px 6px; font: inherit; font-size: 11px;
+    cursor: pointer; opacity: .52;
+  }
+  .kind-toggle.on { opacity: 1; color: var(--ink); border-color: var(--line-strong); }
+  .kind-toggle i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .reset-filters {
+    border: 0; background: transparent; color: var(--muted); padding: 5px 0 0;
+    font: inherit; font-size: 10px; cursor: pointer; text-decoration: underline;
+  }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 3px; border-radius: 9px; background: var(--panel-soft); margin-bottom: 16px; }
+  .tabs button {
+    border: 0; border-radius: 7px; background: transparent; color: var(--muted);
+    padding: 6px 4px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .tabs button.active { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .section-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 9px; }
+  .decision-list { display: flex; flex-direction: column; gap: 7px; }
+  .decision-item {
+    width: 100%; text-align: left; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); color: var(--ink); padding: 9px 10px;
+  }
+  .decision-item:hover { border-color: var(--line-strong); background: var(--panel-soft); }
+  .decision-item.active { border-color: var(--accent); background: var(--accent-soft); }
+  .decision-item .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .decision-item .title { margin-top: 3px; font-weight: 640; font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .decision-item .meta { margin-top: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .status-dot.active, .status-dot.completed, .status-dot.validated { background: var(--ok); }
+  .status-dot.superseded, .status-dot.dropped, .status-dot.abandoned { background: var(--muted); }
+  .status-dot.rejected { background: var(--danger); }
+  .status-dot.running, .status-dot.planned, .status-dot.open { background: var(--warn); }
+  .diagnostics { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .diag { display: flex; gap: 7px; padding: 6px 0; font-size: 12px; border-bottom: 1px dashed var(--line); }
+  .diag:last-child { border-bottom: 0; }
+  .diag .code { font-family: ui-monospace, monospace; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--panel-soft); color: var(--muted); height: fit-content; white-space: nowrap; }
+  .diag.error .code { color: var(--danger); }
+  .diag.warning .code { color: var(--warn); }
+  .diag .msg { min-width: 0; }
+  .diag .path { color: var(--muted); font-size: 11px; }
+
+  .view { max-width: 1180px; margin: 0 auto; }
+  .chain-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .chain-head h1 { font-family: var(--serif); font-size: 30px; line-height: 1.12; letter-spacing: -.025em; margin: 5px 0 7px; max-width: 860px; }
+  .chain-head .meta { color: var(--muted); font-size: 12px; }
+  .chain-kicker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--muted); font: 11px ui-monospace, monospace; }
+  .chain-excerpt { max-width: 760px; margin: 12px 0 4px; color: var(--ink); font-size: 14px; line-height: 1.55; opacity: .9; }
+  .chain-counts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 999px; padding: 2px 7px; border: 1px solid var(--line);
+    background: var(--panel-soft); color: var(--muted); font-size: 10px; font-weight: 650;
+    letter-spacing: .02em; white-space: nowrap;
+  }
+  .status-pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .status-pill.active, .status-pill.completed, .status-pill.validated { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 28%, var(--line)); background: color-mix(in srgb, var(--ok) 8%, var(--panel)); }
+  .status-pill.running, .status-pill.planned, .status-pill.open { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 28%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); }
+  .status-pill.superseded, .status-pill.dropped, .status-pill.abandoned { color: var(--muted); }
+  .status-pill.rejected { color: var(--danger); }
+  .supersedes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); font-size: 11px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--line-strong); color: var(--ink); }
+  .chain-story { display: flex; align-items: stretch; overflow-x: auto; padding: 4px 2px 14px; }
+  .chain-col { min-width: 158px; max-width: 280px; flex: 1 1 0; display: flex; flex-direction: column; gap: 8px; }
+  .chain-col h3 { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+  .chain-arrow { width: 26px; display: grid; place-items: center; color: var(--line-strong); font-size: 18px; padding-top: 24px; flex: 0 0 26px; }
+  .chain-col.decision-col .node-card { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .node-card {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    border: 1px solid var(--line); border-left: 3px solid var(--line-strong);
+    border-radius: 10px; background: var(--panel); color: var(--ink);
+    padding: 10px 11px; font: inherit; box-shadow: var(--shadow);
+  }
+  .node-card { transition: border-color .15s, transform .15s, box-shadow .15s; }
+  .node-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+  .node-card.kind-question { border-left-color: var(--q); }
+  .node-card.kind-exploration { border-left-color: var(--x); }
+  .node-card.kind-experiment { border-left-color: var(--e); }
+  .node-card.kind-decision { border-left-color: var(--d); }
+  .node-card.kind-dataset { border-left-color: var(--ds); }
+  .node-card.kind-figure { border-left-color: var(--fig); }
+  .node-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .kind-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+  .kind-question .kind-dot { background: var(--q); }
+  .kind-exploration .kind-dot { background: var(--x); }
+  .kind-experiment .kind-dot { background: var(--e); }
+  .kind-decision .kind-dot { background: var(--d); }
+  .kind-dataset .kind-dot { background: var(--ds); }
+.kind-figure .kind-dot { background: var(--fig); }
+  .node-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .node-top code { margin-left: auto; font-size: 10px; color: var(--muted); }
+  .node-title { font-weight: 640; font-size: 13px; line-height: 1.3; margin: 5px 0 4px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .node-title.single { -webkit-line-clamp: 1; }
+  .node-excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.4; margin: 3px 0 4px; }
+  .node-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+  .relation-chip { display: inline-block; margin-bottom: 4px; font-size: 10px; color: var(--muted); }
+  .empty { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 16px; color: var(--muted); font-size: 12px; }
+  .empty strong { display: block; color: var(--ink); margin-bottom: 3px; }
+  .research-brief { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .research-brief h2 { font-family: var(--serif); font-size: 19px; font-weight: 600; margin: 0 0 10px; letter-spacing: -.01em; }
+  .brief-grid { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 12px; }
+  .brief-card { border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 12px 13px; }
+  .brief-card h3 { margin: 0 0 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .brief-card p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--ink); opacity: .88; }
+  .brief-card .brief-date { margin-top: 8px; font: 10px ui-monospace, monospace; color: var(--muted); }
+  @media (max-width: 900px) { .brief-grid { grid-template-columns: 1fr; } }
+  .detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+  .detail-actions .detail-action { width: auto; flex: 1 1 auto; }
+  .detail-action.secondary { background: var(--panel); color: var(--muted); border-color: var(--line-strong); }
+
+  .detail h2 { font-family: var(--serif); font-size: 19px; margin: 8px 0 6px; line-height: 1.25; overflow-wrap: anywhere; }
+  .detail-excerpt { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 0 0 10px; }
+  .detail .detail-id { display: flex; align-items: center; gap: 8px; }
+  .detail .kind-pill { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .detail dl { display: grid; grid-template-columns: 74px 1fr; gap: 5px 8px; margin: 12px 0 16px; font-size: 12px; }
+  .detail dt { color: var(--muted); }
+  .detail dd { margin: 0; overflow-wrap: anywhere; }
+  .detail hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+  .detail h3 { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
+  .link-list { display: flex; flex-direction: column; gap: 4px; }
+  .link {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    border: 0; border-radius: 7px; background: transparent; color: var(--ink);
+    padding: 5px 6px; text-align: left; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .link:hover { background: var(--panel-soft); }
+  .link code { color: var(--muted); font-size: 10px; flex: 0 0 auto; }
+  .link-title { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+  .link .rel { margin-left: auto; color: var(--muted); font-size: 10px; flex: 0 0 auto; }
+  .detail-action {
+    width: 100%; border: 1px solid var(--accent); background: var(--accent-soft);
+    color: var(--accent); border-radius: 8px; padding: 7px 9px;
+    font: inherit; font-size: 12px; font-weight: 650; cursor: pointer;
+  }
+  .detail-empty { color: var(--muted); font-size: 12px; padding-top: 10px; }
+
+  .graph-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 9px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .graph-actions { margin-left: auto; display: flex; gap: 6px; }
+  .graph-actions button {
+    border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel);
+    color: var(--ink); padding: 4px 9px; font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .graph-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .graph-actions button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .graph-wrap { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; overflow: auto; box-shadow: var(--shadow); }
+  #graph { display: block; }
+  .edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; opacity: .72; }
+  .edge.active { stroke: var(--accent); stroke-width: 2; opacity: 1; }
+  .gnode { cursor: pointer; }
+  .gnode rect { fill: var(--panel); stroke: var(--line-strong); stroke-width: 1.1; rx: 9; }
+  .gnode:hover rect { stroke: var(--accent); }
+  .gnode.selected rect { stroke: var(--accent); stroke-width: 2.2; }
+  .gnode.dim { opacity: .22; }
+  .gnode.kind-question rect { fill: color-mix(in srgb, var(--q) 8%, var(--panel)); }
+  .gnode.kind-exploration rect { fill: color-mix(in srgb, var(--x) 8%, var(--panel)); }
+  .gnode.kind-experiment rect { fill: color-mix(in srgb, var(--e) 8%, var(--panel)); }
+  .gnode.kind-decision rect { fill: color-mix(in srgb, var(--d) 9%, var(--panel)); }
+  .gnode.kind-dataset rect { fill: color-mix(in srgb, var(--ds) 8%, var(--panel)); }
+  .gnode.kind-figure rect { fill: color-mix(in srgb, var(--fig) 9%, var(--panel)); }
+  .gnode .gid { font: 600 11px ui-monospace, monospace; fill: var(--ink); }
+  .gnode .gtitle { font: 11px ui-sans-serif, system-ui, sans-serif; fill: var(--muted); }
+  .gnode .gstatus { font: 9px ui-sans-serif, system-ui, sans-serif; fill: var(--muted); opacity: .8; }
+
+  .timeline { display: flex; flex-direction: column; gap: 8px; max-width: 900px; }
+  .timeline-item {
+    display: grid; grid-template-columns: 94px minmax(0, 1fr); gap: 14px;
+    width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 11px;
+    background: var(--panel); color: var(--ink); padding: 11px 13px; cursor: pointer; font: inherit;
+  }
+  .timeline-item:hover { border-color: var(--line-strong); background: var(--panel-soft); }
+  .timeline-date { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; padding-top: 2px; }
+  .timeline-title { font-weight: 620; }
+  .timeline-meta { margin-top: 4px; color: var(--muted); font-size: 11px; }
+  .timeline-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .timeline-chip { font-size: 10px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px; color: var(--muted); }
+  .timeline-empty { color: var(--muted); padding: 24px 0; }
+
+  @media (max-width: 1080px) {
+    .layout { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+    .detail {
+      display: block; grid-column: 1 / -1;
+      border-left: 0; border-top: 1px solid var(--line);
+      max-height: 38vh;
+    }
+  }
+  @media (max-width: 760px) {
+    .layout { display: block; height: auto; overflow: visible; }
+    .sidebar, .detail { border: 0; }
+    .sidebar { border-bottom: 1px solid var(--line); }
+    .detail { display: block; border-top: 1px solid var(--line); }
+    .content { padding: 16px; }
+    .chain-story { flex-direction: column; overflow: visible; }
+    .chain-arrow { width: auto; padding: 0; height: 22px; transform: rotate(90deg); }
+    .chain-col { min-width: 0; max-width: none; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="mark">S</div>
+    <div><strong>SciHarness</strong><span id="project-name">loading…</span></div>
+  </div>
+  <div id="counts" class="counts"></div>
+  <div id="validation" class="badge neutral">loading</div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="Filter decisions / nodes…" autocomplete="off" aria-label="Filter decisions and nodes">
+    </div>
+    <details class="filters" id="filter-panel">
+      <summary>Filters <span id="filter-count" class="filter-count"></span></summary>
+      <div class="filter-body">
+        <div class="filter-row">
+          <select id="status-filter" aria-label="Filter by status"><option value="">All statuses</option></select>
+          <select id="question-filter" aria-label="Filter by question"><option value="">All questions</option></select>
+        </div>
+        <div id="kind-filters" class="kind-filters" aria-label="Filter by record kind"></div>
+        <button id="reset-filters" class="reset-filters" type="button">Reset filters</button>
+      </div>
+    </details>
+    <nav class="tabs" aria-label="Views">
+      <button data-tab="chain" class="active">Decision chain</button>
+      <button data-tab="graph">Graph</button>
+      <button data-tab="timeline">Timeline</button>
+    </nav>
+    <h2 class="section-title">Decisions <span id="decision-count" class="muted"></span></h2>
+    <div id="decision-list" class="decision-list"></div>
+    <div id="diagnostics" class="diagnostics"></div>
+  </aside>
+
+  <section class="content">
+    <div id="chain-view" class="view"></div>
+    <div id="graph-view" class="view" hidden>
+      <div class="graph-toolbar">
+        <div class="legend" id="legend"></div>
+        <span class="muted">Click a node to inspect it. Edges follow provenance direction.</span>
+        <span id="scroll-hint" class="muted" hidden>Scroll horizontally to see all kinds →</span>
+        <div class="graph-actions">
+          <button id="fit-graph" type="button">Fit width</button>
+          <button id="export-svg" type="button">Export SVG</button>
+          <button id="export-png" type="button">Export PNG</button>
+        </div>
+      </div>
+      <div class="graph-wrap"><svg id="graph" role="img" aria-label="Project provenance graph"></svg></div>
+    </div>
+    <div id="timeline-view" class="view" hidden></div>
+  </section>
+
+  <aside class="detail" id="detail"></aside>
+</main>
+
+<script>
+"use strict";
+
+const KIND = {
+  question:   { label: "Question",   color: "var(--q)" },
+  exploration:{ label: "Exploration",color: "var(--x)" },
+  experiment: { label: "Experiment", color: "var(--e)" },
+  decision:   { label: "Decision",   color: "var(--d)" },
+  figure:     { label: "Figure",     color: "var(--fig)" },
+  dataset:    { label: "Dataset",    color: "var(--ds)" }
+};
+const KIND_ORDER = ["question", "exploration", "experiment", "decision", "figure", "dataset"];
+const REL_LABEL = {
+  question: "question",
+  exploration: "source exploration",
+  evidence: "evidence",
+  experiment: "experiment",
+  motivated_by: "motivated by",
+  supersedes: "supersedes",
+  datasets: "datasets"
+};
+
+const state = {
+  data: null,
+  byId: new Map(),
+  selected: null,
+  focusDecision: null,
+  tab: "chain",
+  search: "",
+  fitGraph: false,
+  suppressHash: false,
+  filters: { status: "", question: "", kinds: new Set(KIND_ORDER) }
+};
+
+const $ = (selector, root = document) => root.querySelector(selector);
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function truncate(value, length = 30) {
+  const text = String(value == null ? "" : value);
+  return text.length > length ? text.slice(0, length - 1) + "…" : text;
+}
+
+function idNumber(id) {
+  const match = String(id).match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function byIdNum(a, b) {
+  return idNumber(a.id) - idNumber(b.id) || String(a.id).localeCompare(String(b.id));
+}
+
+function decisionNodes() {
+  return state.data.nodes.filter(node => node.kind === "decision").sort(byIdNum);
+}
+
+function matchesSearch(node) {
+  if (!state.search) return true;
+  const haystack = (displayId(node) + " " + node.title + " " + node.status).toLowerCase();
+  return haystack.includes(state.search);
+}
+
+function matchesFilters(node) {
+  if (!matchesSearch(node)) return false;
+  if (state.filters.status && node.status !== state.filters.status) return false;
+  if (state.filters.question) {
+    if (node.id === state.filters.question) return true;
+    if (!outgoing(node.id, "question").some(edge => edge.target === state.filters.question)) return false;
+  }
+  return true;
+}
+
+function matchesKind(node) { return state.filters.kinds.has(node.kind); }
+
+function outgoing(id, relation = null) {
+  return state.data.edges.filter(edge =>
+    edge.source === id && (relation == null || edge.relation === relation)
+  );
+}
+
+function incoming(id, relation = null) {
+  return state.data.edges.filter(edge =>
+    edge.target === id && (relation == null || edge.relation === relation)
+  );
+}
+
+function targetNodes(edges) {
+  return edges.map(edge => state.byId.get(edge.target)).filter(Boolean);
+}
+
+function sourceNodes(edges) {
+  return edges.map(edge => state.byId.get(edge.source)).filter(Boolean);
+}
+
+function kindLabel(kind) { return (KIND[kind] || { label: kind }).label; }
+
+function displayId(node) { return node.label || node.id; }
+
+function statusDot(status) {
+  return '<span class="status-dot ' + escapeHtml(status || "unknown") + '"></span>';
+}
+
+function nodeCard(node, relation, options = {}) {
+  if (!node) return "";
+  const selected = state.selected === node.id ? " selected" : "";
+  const excerpt = options.excerpt !== false && node.excerpt
+    ? `<span class="node-excerpt">${escapeHtml(node.excerpt)}</span>`
+    : "";
+  return `
+    <button class="node-card kind-${escapeHtml(node.kind)}${selected}" data-id="${escapeHtml(node.id)}" title="${escapeHtml(node.title)}">
+      ${relation ? `<span class="relation-chip">${escapeHtml(REL_LABEL[relation] || relation)}</span>` : ""}
+      <span class="node-top">
+        <span class="kind-dot"></span>
+        <span class="node-kind">${escapeHtml(kindLabel(node.kind))}</span>
+        <code>${escapeHtml(displayId(node))}</code>
+      </span>
+      <span class="node-title${options.single ? " single" : ""}">${escapeHtml(node.title || "(untitled)")}</span>
+      ${excerpt}
+      <span class="node-meta">
+        <span class="status-pill ${escapeHtml(node.status || "unknown")}">${escapeHtml(node.status || "unknown")}</span>
+        ${node.created ? `<span>${escapeHtml(node.created)}</span>` : ""}
+      </span>
+    </button>`;
+}
+
+function renderHeader() {
+  const data = state.data;
+  $("#project-name").textContent = data.project.name;
+  $("#project-name").title = data.project.root;
+  const short = { question: "Q", exploration: "X", experiment: "EXP", decision: "D", figure: "Fig", dataset: "DS" };
+  const counts = Object.entries(data.counts || {})
+    .filter(([kind]) => KIND[kind])
+    .map(([kind, count]) => `<span class="count" title="${escapeHtml(kindLabel(kind))}"><i class="kind-dot" style="background:${KIND[kind].color};width:6px;height:6px;border-radius:50%;display:inline-block"></i>${escapeHtml(short[kind] || kindLabel(kind))} <b>${count}</b></span>`)
+    .join("");
+  $("#counts").innerHTML = counts;
+
+  const errors = (data.diagnostics || []).filter(item => item.severity === "error").length;
+  const warnings = (data.diagnostics || []).filter(item => item.severity === "warning").length;
+  const badge = $("#validation");
+  if (errors) {
+    badge.className = "badge bad";
+    badge.textContent = errors + " validation error" + (errors === 1 ? "" : "s");
+  } else if (warnings) {
+    badge.className = "badge neutral";
+    badge.textContent = warnings + " warning" + (warnings === 1 ? "" : "s");
+  } else {
+    badge.className = "badge ok";
+    badge.textContent = "structure valid";
+  }
+}
+
+function populateFilters() {
+  const statuses = [...new Set(state.data.nodes.map(node => node.status).filter(Boolean))].sort();
+  $("#status-filter").innerHTML = '<option value="">All statuses</option>' + statuses.map(status =>
+    `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`
+  ).join("");
+
+  const questions = state.data.nodes.filter(node => node.kind === "question").sort(byIdNum);
+  $("#question-filter").innerHTML = '<option value="">All questions</option>' + questions.map(question =>
+    `<option value="${escapeHtml(question.id)}">${escapeHtml(question.id)} · ${escapeHtml(truncate(question.title, 34))}</option>`
+  ).join("");
+
+  $("#kind-filters").innerHTML = KIND_ORDER.map(kind =>
+    `<button class="kind-toggle on" type="button" data-kind="${escapeHtml(kind)}" title="Toggle ${escapeHtml(kindLabel(kind))}">
+      <i style="background:${KIND[kind].color}"></i>${escapeHtml(kindLabel(kind))}
+    </button>`
+  ).join("");
+}
+
+function renderKindFilters() {
+  document.querySelectorAll("#kind-filters [data-kind]").forEach(button => {
+    button.classList.toggle("on", state.filters.kinds.has(button.dataset.kind));
+  });
+  const active = (state.filters.status ? 1 : 0)
+    + (state.filters.question ? 1 : 0)
+    + (state.filters.kinds.size < KIND_ORDER.length ? 1 : 0);
+  const label = $("#filter-count");
+  if (label) label.textContent = active ? "(" + active + ")" : "";
+}
+
+function refreshFilteredViews() {
+  renderKindFilters();
+  renderDecisionList();
+  if (state.tab === "graph") renderGraph();
+  if (state.tab === "timeline") renderTimeline();
+}
+
+function renderDecisionList() {
+  const decisions = decisionNodes();
+  const visible = decisions.filter(matchesFilters);
+  $("#decision-count").textContent = visible.length === decisions.length
+    ? "(" + decisions.length + ")"
+    : "(" + visible.length + "/" + decisions.length + ")";
+
+  if (!visible.length) {
+    $("#decision-list").innerHTML = decisions.length
+      ? '<div class="empty"><strong>No matching decisions</strong>Clear the search filter.</div>'
+      : '<div class="empty"><strong>No decisions yet</strong>Create one with <code>sci new decision "..."</code>.</div>';
+    return;
+  }
+
+  $("#decision-list").innerHTML = visible.map(decision => {
+    const evidence = outgoing(decision.id).filter(edge => edge.relation === "evidence" || edge.relation === "experiment").length;
+    const downstream = incoming(decision.id, "motivated_by").length;
+    const active = decision.id === state.focusDecision ? " active" : "";
+    return `
+      <button class="decision-item${active}" data-id="${escapeHtml(decision.id)}">
+        <span class="row">
+          <code>${escapeHtml(decision.id)}</code>
+          <span class="meta">${statusDot(decision.status)} ${escapeHtml(decision.status || "unknown")}</span>
+        </span>
+        <span class="title">${escapeHtml(decision.title || "(untitled)")}</span>
+        <span class="meta">${escapeHtml(decision.created || "no date")} · ${evidence} evidence · ${downstream} downstream</span>
+      </button>`;
+  }).join("");
+}
+
+function renderDiagnostics() {
+  const items = (state.data.diagnostics || []).filter(item => item.severity !== "info");
+  if (!items.length) {
+    $("#diagnostics").innerHTML = "";
+    return;
+  }
+  $("#diagnostics").innerHTML = '<h2 class="section-title">Diagnostics</h2>' + items.map(item => `
+    <div class="diag ${escapeHtml(item.severity)}">
+      <span class="code">${escapeHtml(item.code)}</span>
+      <span class="msg">${escapeHtml(item.message)}${item.path ? `<div class="path mono">${escapeHtml(item.path)}</div>` : ""}</span>
+    </div>`).join("");
+}
+
+function renderChain() {
+  const decision = state.byId.get(state.focusDecision) ||
+    decisionNodes().slice(-1)[0];
+  if (!decision) {
+    $("#chain-view").innerHTML = '<div class="empty"><strong>No decisions yet</strong>A decision chain appears after <code>sci new decision</code>.</div>';
+    return;
+  }
+  state.focusDecision = decision.id;
+
+  const question = targetNodes(outgoing(decision.id, "question"));
+  const evidence = targetNodes(
+    state.data.edges.filter(edge =>
+      edge.source === decision.id && (edge.relation === "evidence" || edge.relation === "experiment")
+    )
+  );
+  const downstream = sourceNodes(incoming(decision.id, "motivated_by"));
+  const older = targetNodes(outgoing(decision.id, "supersedes"));
+  const newer = sourceNodes(incoming(decision.id, "supersedes"));
+
+  const evidenceCards = evidence.length
+    ? evidence.map(node => nodeCard(node, "evidence")).join("")
+    : '<div class="empty">No explicit evidence linked yet.</div>';
+  const downstreamCards = downstream.length
+    ? downstream.map(node => nodeCard(node, "motivated_by")).join("")
+    : '<div class="empty">No downstream work linked yet.</div>';
+  const questionCards = question.length
+    ? question.map(node => nodeCard(node, "question")).join("")
+    : '<div class="empty">No question linked.</div>';
+
+  const supersedes = [
+    ...older.map(node => `<button class="chip" data-id="${escapeHtml(node.id)}">supersedes ${escapeHtml(node.id)}</button>`),
+    ...newer.map(node => `<button class="chip" data-id="${escapeHtml(node.id)}">superseded by ${escapeHtml(node.id)}</button>`)
+  ].join("");
+
+  const research = state.data.state || {};
+  const briefCards = [
+    research.current_understanding ? `<article class="brief-card"><h3>Current understanding</h3><p>${escapeHtml(research.current_understanding)}</p>${research.updated ? `<div class="brief-date">updated ${escapeHtml(research.updated)}</div>` : ""}</article>` : "",
+    research.next_actions ? `<article class="brief-card"><h3>Next actions</h3><p>${escapeHtml(research.next_actions)}</p></article>` : "",
+    research.open_lines ? `<article class="brief-card"><h3>Open lines</h3><p>${escapeHtml(research.open_lines)}</p></article>` : ""
+  ].filter(Boolean).join("");
+  const brief = briefCards
+    ? `<section class="research-brief"><h2>Research brief</h2><div class="brief-grid">${briefCards}</div></section>`
+    : "";
+
+  $("#chain-view").innerHTML = `
+    <div class="chain-head">
+      <div>
+        <div class="chain-kicker">
+          <span class="status-pill ${escapeHtml(decision.status || "unknown")}">${escapeHtml(decision.status || "unknown")}</span>
+          <code>${escapeHtml(decision.id)}</code>
+          ${decision.created ? `<span>${escapeHtml(decision.created)}</span>` : ""}
+          <span>${evidence.length} evidence</span>
+          <span>${downstream.length} downstream</span>
+        </div>
+        <h1>${escapeHtml(decision.title || "(untitled decision)")}</h1>
+        ${decision.excerpt ? `<p class="chain-excerpt">${escapeHtml(decision.excerpt)}</p>` : ""}
+        <div class="chain-counts">
+          ${decision.path ? `<span class="muted mono" style="font-size:10px">${escapeHtml(decision.path)}</span>` : ""}
+          ${supersedes ? `<span class="supersedes">${supersedes}</span>` : ""}
+        </div>
+      </div>
+    </div>
+    <div class="chain-story" aria-label="Decision chain">
+      <section class="chain-col">
+        <h3>Question</h3>
+        ${questionCards}
+      </section>
+      <div class="chain-arrow" aria-hidden="true">→</div>
+      <section class="chain-col">
+        <h3>Evidence</h3>
+        ${evidenceCards}
+      </section>
+      <div class="chain-arrow" aria-hidden="true">→</div>
+      <section class="chain-col decision-col">
+        <h3>Decision</h3>
+        ${nodeCard(decision, null, { excerpt: false })}
+      </section>
+      <div class="chain-arrow" aria-hidden="true">→</div>
+      <section class="chain-col">
+        <h3>Motivated work</h3>
+        ${downstreamCards}
+      </section>
+    </div>
+    ${brief}`;
+}
+
+function renderDetail() {
+  const node = state.byId.get(state.selected);
+  if (!node) {
+    $("#detail").innerHTML = '<div class="detail-empty">Select a record to inspect it.</div>';
+    return;
+  }
+  const out = outgoing(node.id);
+  const inc = incoming(node.id);
+
+  function links(edges, direction) {
+    if (!edges.length) return '<div class="detail-empty">None</div>';
+    return '<div class="link-list">' + edges.map(edge => {
+      const otherId = direction === "out" ? edge.target : edge.source;
+      const other = state.byId.get(otherId);
+      if (!other) return "";
+      return `<button class="link" data-id="${escapeHtml(other.id)}" title="${escapeHtml(other.title)}">
+        <span class="kind-dot" style="background:${(KIND[other.kind] || {}).color || "var(--muted)"}"></span>
+        <code>${escapeHtml(displayId(other))}</code>
+        <span class="link-title">${escapeHtml(other.title || "")}</span>
+        <span class="rel">${escapeHtml(REL_LABEL[edge.relation] || edge.relation)}</span>
+      </button>`;
+    }).join("") + '</div>';
+  }
+
+  const actions = [];
+  if (node.kind === "decision" && (state.focusDecision !== node.id || state.tab !== "chain")) {
+    actions.push('<button class="detail-action" id="focus-chain">Open decision chain</button>');
+  }
+  if (state.tab !== "graph") {
+    actions.push('<button class="detail-action secondary" id="focus-graph">Focus in graph</button>');
+  }
+  actions.push('<button class="detail-action secondary" id="copy-link">Copy link</button>');
+  actions.push('<button class="detail-action secondary" id="copy-id">Copy ID</button>');
+
+  $("#detail").innerHTML = `
+    <div class="detail-id">
+      <span class="kind-pill">${escapeHtml(kindLabel(node.kind))}</span>
+      <code class="muted">${escapeHtml(displayId(node))}</code>
+    </div>
+    <h2>${escapeHtml(node.title || "(untitled)")}</h2>
+    ${node.excerpt ? `<p class="detail-excerpt">${escapeHtml(node.excerpt)}</p>` : ""}
+    <dl>
+      <dt>Status</dt><dd><span class="status-pill ${escapeHtml(node.status || "unknown")}">${escapeHtml(node.status || "unknown")}</span></dd>
+      <dt>Created</dt><dd>${escapeHtml(node.created || "—")}</dd>
+      ${node.approved === undefined ? "" : `<dt>Approved</dt><dd>${node.approved ? "yes" : "no"}</dd>`}
+      <dt>Path</dt><dd class="mono">${escapeHtml(node.path || "—")}</dd>
+    </dl>
+    <div class="detail-actions">${actions.join("")}</div>
+    <hr>
+    <h3>Outgoing</h3>${links(out, "out")}
+    <h3>Incoming</h3>${links(inc, "in")}`;
+}
+
+function renderLegend() {
+  $("#legend").innerHTML = KIND_ORDER.map(kind =>
+    `<span><i style="background:${KIND[kind].color}"></i>${escapeHtml(kindLabel(kind))}</span>`
+  ).join("");
+}
+
+function svgEl(tag, attrs = {}) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  return node;
+}
+
+function renderGraph() {
+  const svg = $("#graph");
+  svg.innerHTML = "";
+  const nodes = state.data.nodes.filter(node => matchesFilters(node) && matchesKind(node));
+  if (!nodes.length) {
+    svg.setAttribute("width", "640");
+    svg.setAttribute("height", "160");
+    const text = svgEl("text", { x: 24, y: 60, fill: "currentColor", "font-size": 13 });
+    text.textContent = "No nodes match the current filters.";
+    svg.append(text);
+    return;
+  }
+
+  const groups = {};
+  for (const kind of KIND_ORDER) groups[kind] = [];
+  for (const node of nodes) (groups[node.kind] || groups.dataset).push(node);
+  const visibleKinds = KIND_ORDER.filter(kind => groups[kind].length > 0);
+  const maxRows = Math.max(...visibleKinds.map(kind => groups[kind].length), 1);
+
+  const marginX = 58, marginY = 46, colW = 212, rowH = 104, nodeW = 170, nodeH = 58;
+  const rowCount = Math.max(maxRows, 1);
+  const contentHeight = rowCount * rowH;
+  const width = marginX * 2 + Math.max(visibleKinds.length - 1, 1) * colW + nodeW;
+  const height = Math.max(340, marginY * 2 + contentHeight);
+  const offsetY = (height - contentHeight) / 2;
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  const defs = svgEl("defs");
+  const marker = svgEl("marker", {
+    id: "arrow", viewBox: "0 0 10 10", refX: "9", refY: "5",
+    markerWidth: "6", markerHeight: "6", orient: "auto-start-reverse"
+  });
+  marker.append(svgEl("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "var(--line-strong)" }));
+  const activeMarker = svgEl("marker", {
+    id: "arrow-active", viewBox: "0 0 10 10", refX: "9", refY: "5",
+    markerWidth: "6", markerHeight: "6", orient: "auto-start-reverse"
+  });
+  activeMarker.append(svgEl("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "var(--accent)" }));
+  defs.append(marker, activeMarker);
+  svg.append(defs);
+
+  const positions = new Map();
+  visibleKinds.forEach((kind, column) => {
+    groups[kind].forEach((node, row) => {
+      positions.set(node.id, {
+        x: marginX + column * colW,
+        y: offsetY + row * rowH
+      });
+    });
+  });
+
+  const selected = state.selected;
+  const connected = new Set([selected]);
+  for (const edge of state.data.edges) {
+    if (edge.source === selected) connected.add(edge.target);
+    if (edge.target === selected) connected.add(edge.source);
+  }
+  // Keep two-hop context readable: a decision's question is often connected
+  // through an experiment rather than directly.
+  const direct = [...connected];
+  for (const edge of state.data.edges) {
+    if (direct.includes(edge.source)) connected.add(edge.target);
+    if (direct.includes(edge.target)) connected.add(edge.source);
+  }
+
+  for (const edge of state.data.edges) {
+    const from = positions.get(edge.source);
+    const to = positions.get(edge.target);
+    if (!from || !to) continue;
+    const x1 = from.x + nodeW, y1 = from.y + nodeH / 2;
+    const x2 = to.x, y2 = to.y + nodeH / 2;
+    const active = edge.source === selected || edge.target === selected;
+    let path;
+    if (x2 >= x1) {
+      const mid = (x1 + x2) / 2;
+      path = `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
+    } else {
+      const lift = 58 + Math.abs(from.y - to.y) * .06;
+      path = `M ${x1} ${y1} C ${x1 + 52} ${y1 - lift}, ${x2 - 52} ${y2 - lift}, ${x2} ${y2}`;
+    }
+    const line = svgEl("path", {
+      d: path,
+      class: "edge" + (active ? " active" : ""),
+      "marker-end": active ? "url(#arrow-active)" : "url(#arrow)"
+    });
+    const title = svgEl("title");
+    title.textContent = `${edge.source} ${REL_LABEL[edge.relation] || edge.relation} ${edge.target}`;
+    line.append(title);
+    svg.append(line);
+  }
+
+  for (const node of nodes) {
+    const position = positions.get(node.id);
+    if (!position) continue;
+    const dim = !matchesSearch(node) || (selected && !connected.has(node.id));
+    const group = svgEl("g", {
+      class: `gnode kind-${node.kind}${selected === node.id ? " selected" : ""}${dim ? " dim" : ""}`,
+      "data-id": node.id,
+      tabindex: "0",
+      role: "button",
+      "aria-label": `${displayId(node)} — ${node.title || "(untitled)"}`,
+      transform: `translate(${position.x}, ${position.y})`
+    });
+    group.append(svgEl("rect", { width: nodeW, height: nodeH, rx: 9 }));
+    const id = svgEl("text", { x: 11, y: 18, class: "gid" });
+    id.textContent = displayId(node);
+    const title = svgEl("text", { x: 11, y: 35, class: "gtitle" });
+    title.textContent = truncate(node.title || "(untitled)", 24);
+    const status = svgEl("text", { x: 11, y: 50, class: "gstatus" });
+    status.textContent = (KIND[node.kind] || {}).label + " · " + (node.status || "unknown");
+    const tooltip = svgEl("title");
+    tooltip.textContent = `${displayId(node)} — ${node.title || "(untitled)"} (${node.status || "unknown"})`;
+    group.append(id, title, status, tooltip);
+    svg.append(group);
+  }
+  applyGraphFit();
+}
+
+function applyGraphFit() {
+  const svg = $("#graph");
+  if (!svg) return;
+  if (state.fitGraph) {
+    svg.style.width = "100%";
+    svg.style.height = "auto";
+  } else {
+    svg.style.width = "";
+    svg.style.height = "";
+  }
+  const button = $("#fit-graph");
+  if (button) button.classList.toggle("active", state.fitGraph);
+  const wrap = $(".graph-wrap");
+  const hint = $("#scroll-hint");
+  if (hint && wrap) {
+    hint.hidden = state.fitGraph || svg.getBoundingClientRect().width <= wrap.clientWidth + 1;
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function serializedGraphSvg() {
+  const svg = $("#graph");
+  const clone = svg.cloneNode(true);
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const width = Number(svg.getAttribute("width")) || 640;
+  const height = Number(svg.getAttribute("height")) || 360;
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  const source = [svg, ...svg.querySelectorAll("*")];
+  const target = [clone, ...clone.querySelectorAll("*")];
+  const props = ["fill", "stroke", "stroke-width", "opacity", "font-family", "font-size", "font-weight"];
+  source.forEach((element, index) => {
+    const computed = getComputedStyle(element);
+    props.forEach(prop => {
+      const value = computed.getPropertyValue(prop);
+      if (value && value !== "none") target[index].setAttribute(prop, value);
+    });
+  });
+
+  const panel = getComputedStyle(document.documentElement).getPropertyValue("--panel").trim() || "#ffffff";
+  const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  background.setAttribute("x", "0");
+  background.setAttribute("y", "0");
+  background.setAttribute("width", String(width));
+  background.setAttribute("height", String(height));
+  background.setAttribute("fill", panel);
+  clone.insertBefore(background, clone.firstChild);
+
+  return {
+    text: new XMLSerializer().serializeToString(clone),
+    width,
+    height,
+    background: panel
+  };
+}
+
+function exportGraphSvg() {
+  const graph = serializedGraphSvg();
+  downloadBlob(new Blob([graph.text], { type: "image/svg+xml;charset=utf-8" }), "sciharness-graph.svg");
+}
+
+function exportGraphPng() {
+  const graph = serializedGraphSvg();
+  const blob = new Blob([graph.text], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const image = new Image();
+  image.onload = () => {
+    const scale = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = graph.width * scale;
+    canvas.height = graph.height * scale;
+    const context = canvas.getContext("2d");
+    context.scale(scale, scale);
+    context.fillStyle = graph.background;
+    context.fillRect(0, 0, graph.width, graph.height);
+    context.drawImage(image, 0, 0, graph.width, graph.height);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(output => {
+      if (output) downloadBlob(output, "sciharness-graph.png");
+    }, "image/png");
+  };
+  image.onerror = () => URL.revokeObjectURL(url);
+  image.src = url;
+}
+
+function renderTimeline() {
+  const decisions = decisionNodes().filter(matchesFilters);
+  if (!decisions.length) {
+    $("#timeline-view").innerHTML = '<div class="timeline-empty">No decisions to show.</div>';
+    return;
+  }
+  $("#timeline-view").innerHTML = '<div class="timeline">' + decisions.map(decision => {
+    const evidence = targetNodes(outgoing(decision.id, "evidence").concat(outgoing(decision.id, "experiment")));
+    const downstream = sourceNodes(incoming(decision.id, "motivated_by"));
+    const chips = [
+      ...evidence.map(node => `<span class="timeline-chip">${escapeHtml(displayId(node))} evidence</span>`),
+      ...downstream.map(node => `<span class="timeline-chip">${escapeHtml(displayId(node))} motivated</span>`)
+    ].join("");
+    return `
+      <button class="timeline-item" data-id="${escapeHtml(decision.id)}">
+        <span class="timeline-date">${escapeHtml(decision.created || "—")}</span>
+        <span>
+          <span class="timeline-title">${escapeHtml(decision.title || "(untitled)")}</span>
+          <span class="timeline-meta"><code>${escapeHtml(displayId(decision))}</code> · ${escapeHtml(decision.status || "unknown")}</span>
+          ${chips ? `<span class="timeline-chips">${chips}</span>` : ""}
+        </span>
+      </button>`;
+  }).join("") + "</div>";
+}
+
+function selectNode(id, focus = false) {
+  const node = state.byId.get(id);
+  if (!node) return;
+  state.selected = id;
+  if (node.kind === "decision" && focus) state.focusDecision = id;
+  renderDecisionList();
+  renderDetail();
+  if (node.kind === "decision" && focus) renderChain();
+  if (state.tab === "graph") renderGraph();
+  if (state.tab === "timeline") renderTimeline();
+  updateHash();
+}
+
+function switchTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll(".tabs button").forEach(button => {
+    button.classList.toggle("active", button.dataset.tab === tab);
+  });
+  $("#chain-view").hidden = tab !== "chain";
+  $("#graph-view").hidden = tab !== "graph";
+  $("#timeline-view").hidden = tab !== "timeline";
+  if (tab === "chain") renderChain();
+  if (tab === "graph") renderGraph();
+  if (tab === "timeline") renderTimeline();
+  updateHash();
+}
+
+function deepLinkFor(node) {
+  if (node.kind === "decision") return "#/decision/" + encodeURIComponent(node.id);
+  return "#/record/" + encodeURIComponent(node.id);
+}
+
+function updateHash() {
+  if (state.suppressHash) return;
+  let hash = "";
+  if (state.tab === "chain") {
+    hash = state.focusDecision ? "#/decision/" + encodeURIComponent(state.focusDecision) : "";
+  } else if (state.tab === "graph") {
+    hash = "#/graph";
+  } else if (state.tab === "timeline") {
+    hash = "#/timeline";
+  }
+  if (hash && location.hash !== hash) {
+    history.replaceState(null, "", hash);
+  }
+}
+
+function applyHash() {
+  const raw = location.hash.replace(/^#\/?/, "");
+  if (!raw) return false;
+  const parts = raw.split("/").filter(Boolean).map(part => {
+    try { return decodeURIComponent(part); } catch (_) { return part; }
+  });
+  state.suppressHash = true;
+  try {
+    if (parts[0] === "decision" && state.byId.has(parts[1])) {
+      state.focusDecision = parts[1];
+      state.selected = parts[1];
+      switchTab("chain");
+      renderDecisionList();
+      renderDetail();
+      return true;
+    }
+    if (parts[0] === "record" && state.byId.has(parts[1])) {
+      state.selected = parts[1];
+      renderDecisionList();
+      switchTab(state.tab);
+      renderDetail();
+      return true;
+    }
+    if (parts[0] === "graph") {
+      switchTab("graph");
+      return true;
+    }
+    if (parts[0] === "timeline") {
+      switchTab("timeline");
+      return true;
+    }
+    return false;
+  } finally {
+    state.suppressHash = false;
+  }
+}
+
+async function copyText(value, button) {
+  try {
+    await navigator.clipboard.writeText(value);
+    if (button) {
+      const previous = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = previous; }, 1200);
+    }
+  } catch (_) {
+    // Clipboard access can be blocked; the record ID/path is still visible.
+  }
+}
+
+function bindEvents() {
+  document.querySelector(".tabs").addEventListener("click", event => {
+    const button = event.target.closest("[data-tab]");
+    if (button) switchTab(button.dataset.tab);
+  });
+
+  $("#search").addEventListener("input", event => {
+    state.search = event.target.value.trim().toLowerCase();
+    refreshFilteredViews();
+  });
+
+  $("#status-filter").addEventListener("change", event => {
+    state.filters.status = event.target.value;
+    refreshFilteredViews();
+  });
+
+  $("#question-filter").addEventListener("change", event => {
+    state.filters.question = event.target.value;
+    refreshFilteredViews();
+  });
+
+  $("#kind-filters").addEventListener("click", event => {
+    const button = event.target.closest("[data-kind]");
+    if (!button) return;
+    const kind = button.dataset.kind;
+    const next = new Set(state.filters.kinds);
+    if (next.has(kind)) next.delete(kind); else next.add(kind);
+    state.filters.kinds = next;
+    refreshFilteredViews();
+  });
+
+  $("#reset-filters").addEventListener("click", () => {
+    state.filters = { status: "", question: "", kinds: new Set(KIND_ORDER) };
+    $("#status-filter").value = "";
+    $("#question-filter").value = "";
+    refreshFilteredViews();
+  });
+
+  $("#export-svg").addEventListener("click", exportGraphSvg);
+  $("#export-png").addEventListener("click", exportGraphPng);
+  $("#fit-graph").addEventListener("click", () => {
+    state.fitGraph = !state.fitGraph;
+    applyGraphFit();
+  });
+
+  window.addEventListener("hashchange", () => { applyHash(); });
+
+  document.body.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const gnode = event.target.closest(".gnode");
+    if (!gnode) return;
+    event.preventDefault();
+    selectNode(gnode.dataset.id, gnode.classList.contains("kind-decision"));
+  });
+
+  document.body.addEventListener("click", event => {
+    const focused = event.target.closest("#focus-chain");
+    if (focused && state.selected) {
+      state.focusDecision = state.selected;
+      switchTab("chain");
+      renderDecisionList();
+      renderChain();
+      return;
+    }
+    const graphButton = event.target.closest("#focus-graph");
+    if (graphButton && state.selected) {
+      switchTab("graph");
+      selectNode(state.selected, false);
+      return;
+    }
+    const linkButton = event.target.closest("#copy-link");
+    if (linkButton && state.selected) {
+      const node = state.byId.get(state.selected);
+      copyText(location.origin + location.pathname + deepLinkFor(node), linkButton);
+      return;
+    }
+    const idButton = event.target.closest("#copy-id");
+    if (idButton && state.selected) {
+      copyText(displayId(state.byId.get(state.selected)), idButton);
+      return;
+    }
+    const item = event.target.closest("[data-id]");
+    if (!item) return;
+    const id = item.getAttribute("data-id");
+    if (!id || !state.byId.has(id)) return;
+    selectNode(id, Boolean(item.closest(".decision-item, .timeline-item, .gnode")));
+  });
+}
+
+async function init() {
+  try {
+    const response = await fetch("/api/graph", { cache: "no-store" });
+    if (!response.ok) {
+      let detail = response.status + " " + response.statusText;
+      try { detail = (await response.json()).error || detail; } catch (_) {}
+      throw new Error(detail);
+    }
+    const data = await response.json();
+    state.data = data;
+    state.byId = new Map(data.nodes.map(node => [node.id, node]));
+    const decisions = decisionNodes();
+    state.focusDecision = decisions.length ? decisions[decisions.length - 1].id : null;
+    state.selected = state.focusDecision || (data.nodes[0] ? data.nodes[0].id : null);
+    renderHeader();
+    renderLegend();
+    populateFilters();
+    renderDecisionList();
+    renderDiagnostics();
+    renderDetail();
+    bindEvents();
+    if (!applyHash()) {
+      switchTab("chain");
+    }
+    if (!location.hash) updateHash();
+  } catch (error) {
+    document.body.innerHTML = `<main style="padding:40px;font-family:system-ui">
+      <h1 style="font-size:20px">Cannot load SciHarness graph</h1>
+      <p style="color:#667085">${escapeHtml(error.message)}</p>
+      <p style="color:#667085">Start the viewer with <code>sci web</code> from the project root.</p>
+    </main>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

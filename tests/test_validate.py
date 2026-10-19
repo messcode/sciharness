@@ -103,11 +103,29 @@ def test_validate_catches_mismatched_experiment_config(project, capsys):
     assert main(["new", "experiment", "Config mismatch", "--path", str(project)]) == 0
     config = project / "experiments" / "EXP001-config-mismatch" / "config.yaml"
     config.write_text(
-        "id: EXP999\ntitle: Config mismatch\nstatus: planned\ncreated: 2026-01-01\n",
+        "schema_version: 1\nrecord: EXP999\nparameters: {}\n",
         encoding="utf-8",
     )
     assert main(["validate", "--path", str(project)]) == 1
-    assert "does not match README.md front matter" in capsys.readouterr().out
+    assert "record does not match README.md front matter" in capsys.readouterr().out
+
+
+def test_validate_accepts_legacy_experiment_config(project):
+    assert main(["new", "experiment", "Legacy config", "--path", str(project)]) == 0
+    config = project / "experiments" / "EXP001-legacy-config" / "config.yaml"
+    config.write_text(
+        "id: EXP001\ntitle: Legacy config\nstatus: planned\ncreated: 2026-01-01\n",
+        encoding="utf-8",
+    )
+    assert main(["validate", "--path", str(project)]) == 0
+
+
+def test_validate_rejects_config_without_record_or_id(project, capsys):
+    assert main(["new", "experiment", "No owner", "--path", str(project)]) == 0
+    config = project / "experiments" / "EXP001-no-owner" / "config.yaml"
+    config.write_text("schema_version: 1\nparameters: {}\n", encoding="utf-8")
+    assert main(["validate", "--path", str(project)]) == 1
+    assert "must declare the owning record" in capsys.readouterr().out
 
 
 def test_validate_checks_supersedes_order(project, capsys):

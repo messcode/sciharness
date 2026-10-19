@@ -1,0 +1,201 @@
+"""Read-only web viewer: graph payload and local HTTP endpoints."""
+import json
+import threading
+from urllib.request import urlopen
+
+import yaml
+
+from sciharness.cli import main
+from sciharness.web import build_graph, create_server, server_url
+
+
+def _seed(project):
+    assert main(["new", "question", "Q", "--path", str(project)]) == 0
+    assert main(
+        ["new", "exploration", "X", "--question", "Q001", "--path", str(project)]
+    ) == 0
+    assert main(
+        [
+            "new",
+            "experiment",
+            "E",
+            "--question",
+            "Q001",
+            "--exploration",
+            "X001",
+            "--path",
+            str(project),
+        ]
+    ) == 0
+    assert main(
+        [
+            "new",
+            "decision",
+            "D",
+            "--question",
+            "Q001",
+            "--evidence",
+            "X001",
+            "--evidence",
+            "EXP001",
+            "--path",
+            str(project),
+        ]
+    ) == 0
+
+
+def _add_summaries(project):
+    decision = project / "docs" / "decisions" / "D001-d.md"
+    decision.write_text(
+        decision.read_text(encoding="utf-8").replace(
+            "## Rationale\n",
+            "## Rationale\n\nAccumulated forcing explains the protocol contrast.\n",
+        ),
+        encoding="utf-8",
+    )
+    state = project / "docs" / "STATE.md"
+    state.write_text(
+        state.read_text(encoding="utf-8").replace(
+            "## Current understanding\n",
+            "## Current understanding\n\nThe accumulated-forcing model is favored.\n",
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_graph_payload_contains_nodes_edges_and_diagnostics(project):
+    _seed(project)
+    _add_summaries(project)
+    graph = build_graph(project)
+
+    assert graph["schema_version"] == 1
+    assert graph["project"]["name"] == "Test Project"
+    assert graph["ok"] is True
+    assert graph["diagnostics"] == []
+
+    ids = {node["id"] for node in graph["nodes"]}
+    assert {"Q001", "X001", "EXP001", "D001"} <= ids
+    assert graph["counts"]["decision"] == 1
+
+    edge_set = {
+        (edge["source"], edge["target"], edge["relation"])
+        for edge in graph["edges"]
+    }
+    assert ("D001", "X001", "evidence") in edge_set
+    assert ("D001", "EXP001", "evidence") in edge_set
+    assert ("D001", "Q001", "question") in edge_set
+    assert ("EXP001", "X001", "exploration") in edge_set
+    assert ("EXP001", "Q001", "question") in edge_set
+    assert graph["timeline"]
+    decision = next(node for node in graph["nodes"] if node["id"] == "D001")
+    assert "accumulated forcing" in decision["excerpt"].lower()
+    assert "accumulated-forcing model" in graph["state"]["current_understanding"].lower()
+
+
+def test_graph_includes_datasets(project):
+    (project / "data" / "raw").mkdir(parents=True)
+    (project / "data" / "raw" / "run.csv").write_text("x,y\n1,2\n", encoding="utf-8")
+    (project / "data" / "registry.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "datasets": [
+                    {"id": "DS001", "name": "Run", "path": "data/raw/run.csv"}
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        main(
+            [
+                "new",
+                "experiment",
+                "E",
+                "--dataset",
+                "DS001",
+                "--path",
+                str(project),
+            ]
+        )
+        == 0
+    )
+    graph = build_graph(project)
+    assert any(node["id"] == "DS001" for node in graph["nodes"])
+    assert any(
+        edge["source"] == "EXP001"
+        and edge["target"] == "DS001"
+        and edge["relation"] == "datasets"
+        for edge in graph["edges"]
+    )
+
+
+def test_web_server_serves_ui_and_graph(project):
+    _seed(project)
+    server = create_server(project, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = server_url(server)
+    try:
+        with urlopen(base + "api/graph", timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        assert payload["project"]["name"] == "Test Project"
+        assert any(node["id"] == "D001" for node in payload["nodes"])
+
+        with urlopen(base, timeout=10) as response:
+            html = response.read().decode("utf-8")
+        assert "SciHarness" in html
+        assert "Decision chain" in html
+
+        with urlopen(base + "health", timeout=10) as response:
+            assert json.loads(response.read().decode("utf-8"))["ok"] is True
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)
+
+
+def test_graph_includes_figure_nodes_and_evidence_edges(project):
+    _seed(project)
+    assert main(["figure", "init", "figure3", "--path", str(project)]) == 0
+    manifest = project / "manuscript" / "figures" / "figure3" / "manifest.yaml"
+    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    data["panels"] = {
+        "A": {
+            "role": "main",
+            "evidence": {"experiment": "EXP001", "explorations": ["X001"]},
+        }
+    }
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    graph = build_graph(project)
+    figure = next(node for node in graph["nodes"] if node["kind"] == "figure")
+    assert figure["label"] == "figure3"
+    assert figure["id"] == "figure:figure3"
+    edge_set = {
+        (edge["source"], edge["target"], edge["relation"])
+        for edge in graph["edges"]
+    }
+    assert ("figure:figure3", "EXP001", "evidence") in edge_set
+    assert ("figure:figure3", "X001", "evidence") in edge_set
+
+
+def test_web_html_contains_filters_and_export_actions(project):
+    _seed(project)
+    server = create_server(project, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urlopen(server_url(server), timeout=10) as response:
+            html = response.read().decode("utf-8")
+        assert "kind-filters" in html
+        assert "status-filter" in html
+        assert "Export SVG" in html
+        assert "Export PNG" in html
+        assert "research-brief" in html
+        assert "#/decision/" in html
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)

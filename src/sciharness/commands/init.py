@@ -9,22 +9,25 @@ from typing import Any, Dict
 
 import yaml
 
+from ..output import emit, envelope, project_info
 from ..project import (
     CONFIG_NAME,
     DEFAULT_PATHS,
     REQUIRED_DIRECTORIES,
     SUPPORTED_SCHEMA_VERSION,
+    TRACKED_EMPTY_DIRECTORIES,
     ProjectError,
 )
-
-TEMPLATE_DIR = (
-    Path(__file__).resolve().parent.parent / "templates" / "project"
+from ..scaffold import (
+    PLACEHOLDER_DATE,
+    PLACEHOLDER_NAME,
+    PROJECT_TEMPLATE_DIR,
+    SKILLS_SOURCE_DIR,
+    write_scaffold_manifest,
 )
-RESOURCES_DIR = Path(__file__).resolve().parent.parent / "resources"
-PROJECT_SKILLS_DIR = Path(".agents") / "skills"
 
-PLACEHOLDER_NAME = "{{PROJECT_NAME}}"
-PLACEHOLDER_DATE = "{{PROJECT_DATE}}"
+TEMPLATE_DIR = PROJECT_TEMPLATE_DIR
+PROJECT_SKILLS_DIR = Path(".agents") / "skills"
 
 _COMMIT_MESSAGE = "Initialize scientific project"
 
@@ -39,15 +42,28 @@ def run(args: Any) -> int:
     _create_directories(target)
     _deploy_skills(target)
     _write_config(target, name, today)
+    write_scaffold_manifest(target)
 
     if args.no_git:
         git_status = "skipped Git initialization (--no-git)"
     else:
         git_status = _init_git(target)
 
-    print("Initialized scientific project {!r} in {}".format(name, target))
-    print("  {}".format(git_status))
-    print("  next: sci status --path {}".format(target))
+    if getattr(args, "json", False):
+        emit(
+            envelope(
+                "init",
+                project=project_info(target, name),
+                data={
+                    "git": git_status,
+                    "next": "sci status --path {}".format(target),
+                },
+            )
+        )
+    else:
+        print("Initialized scientific project {!r} in {}".format(name, target))
+        print("  {}".format(git_status))
+        print("  next: sci status --path {}".format(target))
     return 0
 
 
@@ -91,11 +107,18 @@ def _copy_template(source: Path, target: Path, replacements: Dict[str, str]) -> 
 def _create_directories(target: Path) -> None:
     for relative in REQUIRED_DIRECTORIES:
         (target / relative).mkdir(parents=True, exist_ok=True)
+    # Git does not track empty directories.  Without placeholders, a freshly
+    # cloned project would lose docs/questions, explorations, experiments, …
+    # and `sci validate` / `sci new` would fail on a brand-new clone.
+    for relative in TRACKED_EMPTY_DIRECTORIES:
+        keep = target / relative / ".gitkeep"
+        if not keep.exists():
+            keep.write_text("", encoding="utf-8")
 
 
 def _deploy_skills(target: Path) -> None:
     """Copy packaged Agent Skills into the portable ``.agents/skills`` location."""
-    skills_source = RESOURCES_DIR / "skills"
+    skills_source = SKILLS_SOURCE_DIR
     if not skills_source.is_dir():
         raise ProjectError(
             "bundled Agent Skills are missing: {}".format(skills_source)

@@ -16,7 +16,7 @@ keep the historical provenance but trust the newer state.
 
 - Create records with `sci new question|exploration|experiment|decision`.
 - Never invent IDs (Q###, X###, EXP###, D###); `sci` allocates them.
-- Run `sci validate` after structural changes.
+- Run `sci validate` after structural changes; use `sci doctor` for drift.
 - Orient with `sci context`; locate one record with `sci show ID`.
 
 ## Manuscript figures
@@ -34,6 +34,7 @@ Do not load figure guidance for unrelated tasks.
 
 - Source data is immutable once acquired.
 - Generated outputs belong under `outputs/`.
-- Experiment-specific settings belong to that experiment.
+- Pre-register an experiment (`sci start EXP###`) before running it.
 - Historical decisions are append-only; supersede, do not rewrite.
+- Release approval is explicit; never set `release.approved` or `status: released` yourself.
 - Markdown/YAML files and the `sci` CLI work without any skill support.

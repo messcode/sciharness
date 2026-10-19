@@ -36,6 +36,8 @@ lifecycle and the paired source-data invariant.
 
 | Path | Purpose |
 | --- | --- |
+| `.sci/ids/` | Permanent ID claims; never reuse a deleted record's ID |
+| `.sci/scaffold.json` | Baseline hashes for `sci doctor` / `sci upgrade` |
 | `docs/CHARTER.md` | Purpose, scope, and boundaries |
 | `docs/STATE.md` | Current understanding and next actions |
 | `docs/guides/FIGURES.md` | Project-wide manuscript-figure conventions |

@@ -21,7 +21,20 @@ def test_version_flag_reports_package_version(capsys):
 def test_top_level_help_lists_commands(capsys):
     _help()
     out = capsys.readouterr().out
-    for command in ("init", "status", "context", "show", "validate", "new", "figure"):
+    for command in (
+        "init",
+        "status",
+        "context",
+        "show",
+        "validate",
+        "start",
+        "doctor",
+        "upgrade",
+        "migrate",
+        "web",
+        "new",
+        "figure",
+    ):
         assert command in out
     assert "Scientific state" in out
 
@@ -57,10 +70,15 @@ def test_figure_help_variants(capsys):
     assert "lazily" in init_out
     assert "manifest.yaml" in init_out
 
+    _help("figure", "approve")
+    approve_out = capsys.readouterr().out
+    assert "--by" in approve_out
+    assert "approval" in approve_out
+
     _help("figure", "validate")
     validate_out = capsys.readouterr().out
     assert "--release" in validate_out
-    assert "release.approved" in validate_out
+    assert "approval record" in validate_out
 
 
 def test_context_and_show_help(capsys):
@@ -69,3 +87,11 @@ def test_context_and_show_help(capsys):
 
     _help("show")
     assert "record" in capsys.readouterr().out
+
+
+def test_web_help_describes_read_only_viewer(capsys):
+    _help("web")
+    out = capsys.readouterr().out
+    assert "read-only" in out
+    assert "--host" in out
+    assert "--port" in out

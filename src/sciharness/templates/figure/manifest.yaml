@@ -5,6 +5,9 @@ status: working
 
 style_file: null
 
+# `release.approved` and `release.approved_by/approved_at` are written by
+# `sci figure approve`; do not set them by hand. The audit record lives in
+# release/APPROVAL.yaml and is verified by `sci figure validate --release`.
 release:
   approved: false
 

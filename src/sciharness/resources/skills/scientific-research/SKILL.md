@@ -22,8 +22,11 @@ Before acting:
 3. Read `docs/STATE.md` (current understanding and next actions).
 4. Run `sci status` for active questions, explorations, experiments, and
    recent decisions.
-5. Locate a specific record with `sci show ID` (for example `sci show EXP012`).
-6. Run `sci validate` if files may have drifted.
+5. Locate a specific record with `sci show ID` (for example `sci show EXP012`);
+   add `--related` to see what references it.
+6. Run `sci validate` if files may have drifted; run `sci doctor` if scaffold
+   files or ID claims may have drifted.
+7. Add `--json` when you need machine-readable records, diagnostics, or paths.
 
 ## Bookkeeping rules
 
@@ -37,6 +40,8 @@ Before acting:
 - When a new Exploration or Experiment is started because of a prior
   scientific Decision, record that relationship with `--motivated-by`, for
   example `sci new experiment "..." --motivated-by D001`.
+- Start a planned experiment with `sci start EXP###` to freeze its
+  pre-registration; do not edit the design sections afterwards.
 - After changing files, run `sci validate` before committing.
 
 ## When to create each record
@@ -48,7 +53,10 @@ Before acting:
 - **Experiment** (`sci new experiment`): a claim that needs evidence. Promote
   an exploration when there is a testable prediction and a
   falsification/decision rule declared up front. Fill in competing
-  hypotheses, design, primary estimand, and the decision rule before running.
+  hypotheses, design, primary estimand, and the decision rule, then run
+  `sci start EXP###` before executing anything. Add `--dataset DS###` only for
+  datasets declared in `data/registry.yaml`; record command/commit/environment
+  in `run.yaml` after the run.
 - **Decision** (`sci new decision`): a change in scientific belief, hypothesis
   status, or research direction. Ordinary implementation choices belong in
   commits and code comments, not in decisions. Decisions are append-only; use

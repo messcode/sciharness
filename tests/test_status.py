@@ -34,5 +34,12 @@ def test_status_handles_empty_project(project, capsys):
 
 
 def test_status_outside_a_project_fails(tmp_path, capsys):
-    assert main(["status", "--path", str(tmp_path)]) == 1
+    assert main(["status", "--path", str(tmp_path)]) == 3
     assert "no .sci.yaml" in capsys.readouterr().err
+
+
+def test_status_returns_nonzero_when_validation_fails(project, capsys):
+    (project / "docs" / "STATE.md").unlink()
+    assert main(["status", "--path", str(project)]) == 1
+    out = capsys.readouterr().out
+    assert "1 problem(s)" in out

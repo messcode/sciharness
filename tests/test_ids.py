@@ -1,4 +1,10 @@
 """Deterministic ID allocation and reference checks for ``sci new``."""
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
 from sciharness.cli import main
 from sciharness.project import read_front_matter
 
@@ -19,6 +25,8 @@ def test_question_ids_scan_existing_files(project):
     )
     assert main(["new", "question", "Next", "--path", str(project)]) == 0
     assert (project / "docs" / "questions" / "Q011-next.md").is_file()
+    # The manually created record is adopted into the permanent claim ledger.
+    assert (project / ".sci" / "ids" / "Q010").is_file()
 
 
 def test_exploration_ids_increment(project):
@@ -53,9 +61,9 @@ def test_decision_ids_increment(project):
 def test_new_rejects_missing_reference(project, capsys):
     assert main(
         ["new", "exploration", "Broken", "--question", "Q999", "--path", str(project)]
-    ) == 1
+    ) == 3
     assert "Q999" in capsys.readouterr().err
-    assert list((project / "explorations").iterdir()) == []
+    assert [p for p in (project / "explorations").iterdir() if p.name != ".gitkeep"] == []
 
 
 def test_new_records_existing_reference(project):
@@ -109,9 +117,79 @@ def test_experiment_and_decision_links_are_recorded(project):
             "--path",
             str(project),
         ]
-    ) == 1  # D000 does not exist
+    ) == 3  # D000 does not exist
 
 
 def test_slug_handles_punctuation(project):
     assert main(["new", "question", "What predicts R_k(t)?", "--path", str(project)]) == 0
     assert (project / "docs" / "questions" / "Q001-what-predicts-r-k-t.md").is_file()
+
+
+def test_deleted_highest_id_is_not_reused(project):
+    for index in (1, 2):
+        assert main(
+            ["new", "experiment", "E{}".format(index), "--path", str(project)]
+        ) == 0
+
+    shutil.rmtree(project / "experiments" / "EXP002-e2")
+    assert (project / ".sci" / "ids" / "EXP002").is_file()
+
+    assert main(["new", "experiment", "After delete", "--path", str(project)]) == 0
+    names = sorted(
+        path.name for path in (project / "experiments").iterdir() if path.is_dir()
+    )
+    assert names == ["EXP001-e1", "EXP003-after-delete"]
+    assert (project / "outputs" / "experiments" / "EXP003").is_dir()
+
+
+def test_concurrent_new_explorations_get_distinct_ids(project):
+    source = str(Path(__file__).resolve().parents[1] / "src")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = source + os.pathsep + env.get("PYTHONPATH", "")
+    processes = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "sciharness.cli",
+                "new",
+                "exploration",
+                "Parallel {}".format(index),
+                "--path",
+                str(project),
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for index in range(6)
+    ]
+    for process in processes:
+        _stdout, stderr = process.communicate(timeout=60)
+        assert process.returncode == 0, stderr
+
+    names = sorted(
+        path.name for path in (project / "explorations").iterdir() if path.is_dir()
+    )
+    ids = [name.split("-", 1)[0] for name in names]
+    assert ids == ["X001", "X002", "X003", "X004", "X005", "X006"]
+    assert main(["validate", "--path", str(project)]) == 0
+
+
+def test_new_creates_missing_record_directory(project):
+    shutil.rmtree(project / "explorations")
+    assert main(["new", "exploration", "Recreated", "--path", str(project)]) == 0
+    record = project / "explorations" / "X001-recreated" / "NOTE.md"
+    assert record.is_file()
+    assert (project / "explorations" / ".gitkeep").is_file()
+
+
+def test_unicode_title_keeps_readable_filename(project):
+    assert main(["new", "question", "中文标题测试", "--path", str(project)]) == 0
+    assert (project / "docs" / "questions" / "Q001-中文标题测试.md").is_file()
+
+
+def test_title_without_words_falls_back_to_record_id(project):
+    assert main(["new", "question", "???", "--path", str(project)]) == 0
+    assert (project / "docs" / "questions" / "Q001-Q001.md").is_file()

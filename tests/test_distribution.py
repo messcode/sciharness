@@ -28,18 +28,30 @@ PACKAGED_TEMPLATE_PATHS = (
     "sciharness/templates/project/docs/guides/FIGURES.md",
     "sciharness/templates/figure/FIGURE.md",
     "sciharness/templates/figure/manifest.yaml",
+    "sciharness/resources/web/index.html",
 )
 BUILD_TIMEOUT = 300
 
 
 def _copy_source_tree(destination):
     destination.mkdir(parents=True, exist_ok=True)
-    for name in ("pyproject.toml", "README.md", "MANIFEST.in", "LICENSE"):
+    for name in (
+        "pyproject.toml",
+        "README.md",
+        "MANIFEST.in",
+        "LICENSE",
+        "CHANGELOG.md",
+    ):
         shutil.copy2(REPO_ROOT / name, destination / name)
     shutil.copytree(
         REPO_ROOT / "src",
         destination / "src",
         ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"),
+    )
+    shutil.copytree(
+        REPO_ROOT / "docs",
+        destination / "docs",
+        ignore=shutil.ignore_patterns("__pycache__"),
     )
 
 
@@ -99,6 +111,19 @@ def test_sdist_contains_figure_skill_and_templates(distributions):
         names = archive.getnames()
     assert any(name.endswith(SCIENTIFIC_FIGURES_SKILL) for name in names)
     for relative in PACKAGED_TEMPLATE_PATHS:
+        assert any(name.endswith(relative) for name in names), relative
+
+
+def test_sdist_contains_docs_and_changelog(distributions):
+    with tarfile.open(str(distributions["sdist"])) as archive:
+        names = archive.getnames()
+    for relative in (
+        "docs/DESIGN.md",
+        "docs/CLI.md",
+        "docs/SCHEMA.md",
+        "docs/FIGURES.md",
+        "CHANGELOG.md",
+    ):
         assert any(name.endswith(relative) for name in names), relative
 
 
@@ -263,6 +288,11 @@ def test_clean_wheel_supports_v02_workflow(distributions, tmp_path):
     result = run("validate", cwd=project)
     assert result.returncode == 0, result.stderr
 
+    result = run("doctor", cwd=project)
+    assert result.returncode == 0, result.stdout + result.stderr
+    result = run("upgrade", "--dry-run", cwd=project)
+    assert result.returncode == 0, result.stdout + result.stderr
+
     result = run("figure", "init", "figure3", cwd=project)
     assert result.returncode == 0, result.stderr
     result = run("figure", "validate", "figure3", cwd=project)
@@ -285,7 +315,7 @@ def test_clean_wheel_supports_v02_workflow(distributions, tmp_path):
         "figure_id": "figure3",
         "status": "validated",
         "style_file": None,
-        "release": {"approved": True},
+        "release": {"approved": False},
         "panels": {
             "A": {
                 "role": "main",
@@ -303,6 +333,10 @@ def test_clean_wheel_supports_v02_workflow(distributions, tmp_path):
     (figure / "manifest.yaml").write_text(
         yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8"
     )
+    result = run(
+        "figure", "approve", "figure3", "--by", "Distribution Test", cwd=project
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
     result = run("figure", "validate", "figure3", "--release", cwd=project)
     assert result.returncode == 0, result.stdout + result.stderr
 

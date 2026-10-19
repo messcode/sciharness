@@ -6,20 +6,23 @@ pick IDs by hand.
 from __future__ import annotations
 
 import datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 import yaml
 
+from ..datasets import dataset_ids
+from ..output import EXIT_OK, emit, envelope, project_info
 from ..project import (
     EVIDENCE_KINDS,
     ID_PREFIX,
     MOTIVATED_BY_KINDS,
     ProjectError,
+    allocate_id,
     config_path,
     existing_ids,
     find_project_root,
-    next_id,
     relative_path,
     render_record,
     slugify,
@@ -98,6 +101,16 @@ DECISION_BODY = """# {record_id} — {title}
 """
 
 
+@dataclass
+class CreatedRecord:
+    kind: str
+    id: str
+    path: Path
+    outputs: Optional[Path] = None
+    config: Optional[Path] = None
+    datasets: Optional[List[str]] = None
+
+
 def run(args: Any) -> int:
     root = find_project_root(Path(args.path))
     title = (args.title or "").strip()
@@ -110,6 +123,7 @@ def run(args: Any) -> int:
     supersedes = _clean(getattr(args, "supersedes", None))
     evidence = _dedupe(getattr(args, "evidence", None) or ())
     motivated_by = _dedupe(getattr(args, "motivated_by", None) or ())
+    datasets = _dedupe(getattr(args, "datasets", None) or ())
 
     if question:
         _require(root, "question", question)
@@ -121,21 +135,55 @@ def run(args: Any) -> int:
         _require(root, "decision", supersedes)
     _require_members(root, evidence, EVIDENCE_KINDS, "evidence")
     _require_members(root, motivated_by, MOTIVATED_BY_KINDS, "motivated-by")
+    _require_datasets(root, datasets)
 
     kind = args.record_kind
     if kind == "question":
-        return _new_question(root, title)
-    if kind == "exploration":
-        return _new_exploration(root, title, question, motivated_by)
-    if kind == "experiment":
-        return _new_experiment(root, title, question, exploration, motivated_by)
-    if kind == "decision":
+        created = _new_question(root, title)
+    elif kind == "exploration":
+        created = _new_exploration(root, title, question, motivated_by)
+    elif kind == "experiment":
+        created = _new_experiment(
+            root, title, question, exploration, motivated_by, datasets
+        )
+    elif kind == "decision":
         # ``--experiment`` is a legacy compatibility input for Decision
         # evidence. Merge it into the canonical ``evidence`` list, keeping the
         # first-seen order and dropping duplicates.
         merged = _dedupe(([experiment] if experiment else []) + evidence)
-        return _new_decision(root, title, question, merged, supersedes)
-    raise ProjectError("unknown record kind: {}".format(kind))
+        created = _new_decision(root, title, question, merged, supersedes)
+    else:
+        raise ProjectError("unknown record kind: {}".format(kind))
+
+    created_data: dict = {
+        "kind": created.kind,
+        "id": created.id,
+        "record": relative_path(root, created.path),
+    }
+    if created.config is not None:
+        created_data["config"] = relative_path(root, created.config)
+    if created.outputs is not None:
+        created_data["outputs"] = relative_path(root, created.outputs)
+    if created.datasets:
+        created_data["datasets"] = created.datasets
+
+    if getattr(args, "json", False):
+        emit(
+            envelope(
+                "new.{}".format(created.kind),
+                project=project_info(root),
+                data=created_data,
+            )
+        )
+        return EXIT_OK
+
+    print("Created {} {}".format(created.kind, created.id))
+    print("  {}".format(created_data["record"]))
+    if created.config is not None:
+        print("  {}".format(created_data["config"]))
+    if created.outputs is not None:
+        print("  {}".format(created_data["outputs"]))
+    return EXIT_OK
 
 
 def _today() -> str:
@@ -179,23 +227,42 @@ def _require_members(
             )
 
 
+def _require_datasets(root: Path, ids: List[str]) -> None:
+    if not ids:
+        return
+    declared = dataset_ids(root)
+    for record_id in ids:
+        if record_id not in declared:
+            raise ProjectError(
+                "--dataset must reference a dataset declared in "
+                "data/registry.yaml (got {!r})".format(record_id)
+            )
+
+
 def _require_directory(root: Path, key: str) -> Path:
+    """Return a configured record directory, creating it lazily if needed.
+
+    A project may be cloned without empty directories (or a user may delete an
+    empty one).  Creating the parent here keeps `sci new` usable instead of
+    producing a deadlock with `sci validate`.
+    """
     directory = config_path(root, key)
-    if not directory.is_dir():
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
         raise ProjectError(
-            "project path {!r} is missing or not a directory: {} "
-            "(run `sci validate`)".format(key, directory)
-        )
+            "project path {!r} is not a usable directory: {} ({})".format(
+                key, directory, exc
+            )
+        ) from exc
+    keep = directory / ".gitkeep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8")
     return directory
 
 
 def _write(path: Path, front_matter: Any, body: str) -> None:
     path.write_text(render_record(front_matter, body), encoding="utf-8")
-
-
-def _report(root: Path, path: Path, kind: str, record_id: str) -> None:
-    print("Created {} {}".format(kind, record_id))
-    print("  {}".format(relative_path(root, path)))
 
 
 def _create_output_workspace(
@@ -213,10 +280,11 @@ def _create_output_workspace(
     return workspace
 
 
-def _new_question(root: Path, title: str) -> int:
-    record_id = next_id(root, "question")
+def _new_question(root: Path, title: str) -> CreatedRecord:
     directory = _require_directory(root, "questions")
-    path = unique_path(directory, "{}-{}".format(record_id, slugify(title)), ".md")
+    record_id = allocate_id(root, "question")
+    slug = slugify(title) or record_id
+    path = unique_path(directory, "{}-{}".format(record_id, slug), ".md")
     front = {
         "id": record_id,
         "title": title,
@@ -225,8 +293,7 @@ def _new_question(root: Path, title: str) -> int:
     }
     body = QUESTION_BODY.format(record_id=record_id, title=title)
     _write(path, front, body)
-    _report(root, path, "question", record_id)
-    return 0
+    return CreatedRecord(kind="question", id=record_id, path=path)
 
 
 def _new_exploration(
@@ -234,10 +301,11 @@ def _new_exploration(
     title: str,
     question: Optional[str],
     motivated_by: List[str],
-) -> int:
-    record_id = next_id(root, "exploration")
+) -> CreatedRecord:
     parent = _require_directory(root, "explorations")
-    folder = unique_path(parent, "{}-{}".format(record_id, slugify(title)), "")
+    record_id = allocate_id(root, "exploration")
+    slug = slugify(title) or record_id
+    folder = unique_path(parent, "{}-{}".format(record_id, slug), "")
     folder.mkdir(parents=True)
     front = {
         "id": record_id,
@@ -254,9 +322,9 @@ def _new_exploration(
     workspace = _create_output_workspace(
         root, "explorations", record_id, ("plots", "tables", "logs", "cache")
     )
-    _report(root, note, "exploration", record_id)
-    print("  {}".format(relative_path(root, workspace)))
-    return 0
+    return CreatedRecord(
+        kind="exploration", id=record_id, path=note, outputs=workspace
+    )
 
 
 def _new_experiment(
@@ -265,10 +333,12 @@ def _new_experiment(
     question: Optional[str],
     exploration: Optional[str],
     motivated_by: List[str],
-) -> int:
-    record_id = next_id(root, "experiment")
+    datasets: List[str],
+) -> CreatedRecord:
     parent = _require_directory(root, "experiments")
-    folder = unique_path(parent, "{}-{}".format(record_id, slugify(title)), "")
+    record_id = allocate_id(root, "experiment")
+    slug = slugify(title) or record_id
+    folder = unique_path(parent, "{}-{}".format(record_id, slug), "")
     folder.mkdir(parents=True)
     front = {
         "id": record_id,
@@ -282,25 +352,39 @@ def _new_experiment(
         front["exploration"] = exploration
     if motivated_by:
         front["motivated_by"] = motivated_by
+    if datasets:
+        front["datasets"] = datasets
     readme = folder / "README.md"
     _write(readme, front, EXPERIMENT_BODY.format(record_id=record_id, title=title))
-    # The machine-readable experiment config mirrors identity fields so that
-    # scripts can load an experiment without parsing Markdown.
+    # The machine-readable config holds computational settings only.  Identity,
+    # status, and provenance have a single source of truth: README.md front
+    # matter.  Keeping them out of config.yaml prevents the two files drifting.
     config_path_ = folder / "config.yaml"
+    config_data = {
+        "schema_version": 1,
+        "record": record_id,
+        "parameters": {},
+    }
     config_path_.write_text(
-        yaml.safe_dump(dict(front), sort_keys=False, allow_unicode=True),
+        "# Experiment configuration: computational settings only.\n"
+        "# Scientific identity, status, and provenance live in README.md.\n"
+        + yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
-    _report(root, readme, "experiment", record_id)
-    print("  {}".format(relative_path(root, config_path_)))
     workspace = _create_output_workspace(
         root,
         "experiments",
         record_id,
         ("plots", "tables", "logs", "checkpoints", "cache"),
     )
-    print("  {}".format(relative_path(root, workspace)))
-    return 0
+    return CreatedRecord(
+        kind="experiment",
+        id=record_id,
+        path=readme,
+        outputs=workspace,
+        config=config_path_,
+        datasets=datasets or None,
+    )
 
 
 def _new_decision(
@@ -309,10 +393,11 @@ def _new_decision(
     question: Optional[str],
     evidence: List[str],
     supersedes: Optional[str],
-) -> int:
-    record_id = next_id(root, "decision")
+) -> CreatedRecord:
     directory = _require_directory(root, "decisions")
-    path = unique_path(directory, "{}-{}".format(record_id, slugify(title)), ".md")
+    record_id = allocate_id(root, "decision")
+    slug = slugify(title) or record_id
+    path = unique_path(directory, "{}-{}".format(record_id, slug), ".md")
     front = {
         "id": record_id,
         "title": title,
@@ -327,5 +412,4 @@ def _new_decision(
         front["supersedes"] = supersedes
     body = DECISION_BODY.format(record_id=record_id, title=title)
     _write(path, front, body)
-    _report(root, path, "decision", record_id)
-    return 0
+    return CreatedRecord(kind="decision", id=record_id, path=path)

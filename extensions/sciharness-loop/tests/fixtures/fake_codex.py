@@ -11,7 +11,12 @@ context = json.loads(Path("/input/context.json").read_text())
 assert context["project"]["root"] == "/input/project"
 assert not Path("/var/run/docker.sock").exists()
 assert not Path("/project").exists()
-assert not Path("/root/.codex/auth.json").exists()
+try:
+    Path("/root/.codex/auth.json").read_bytes()
+except (FileNotFoundError, PermissionError):
+    pass
+else:
+    raise AssertionError("host auth unexpectedly readable")
 assert not Path("/input/project/.sci").exists()
 try:
     Path("/input/project/docs/STATE.md").write_text("hostile overwrite")

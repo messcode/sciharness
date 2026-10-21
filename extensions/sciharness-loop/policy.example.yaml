@@ -1,0 +1,18 @@
+schema_version: 1
+# Missing policy defaults to record_only. Use suggest to disable step/accept.
+mode: step
+image: sciharness-codex:local
+# Exact project-relative files, never globs or directories. Configured charter
+# and state from `sci context` are always included. No dataset is copied implicitly.
+read_files:
+  - docs/CHARTER.md
+  - docs/STATE.md
+timeout_seconds: 600
+max_input_bytes: 256000
+max_output_bytes: 10000000
+max_files: 100
+memory_mb: 2048
+cpus: 2
+# bridge permits the model API and literature access. none is useful for offline
+# executor fixtures; it prevents API-backed Codex from reaching its model.
+network: bridge

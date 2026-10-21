@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sciharness-loop"
+version = "0.1.0"
+description = "Optional, human-controlled research execution for SciHarness"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["sciharness>=0.8,<0.9", "PyYAML>=5.3"]
+
+[project.scripts]
+sci-loop = "sciharness_loop.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F", "E9"]

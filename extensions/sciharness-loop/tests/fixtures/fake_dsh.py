@@ -21,8 +21,9 @@ assert os.environ.get("DSH_HOME") == "/tmp/dsh-home", os.environ
 patch_paths = [args[index + 1] for index, value in enumerate(args) if value == "--patch"]
 assert patch_paths, args
 patch = Path(patch_paths[0]).read_text(encoding="utf-8")
-assert "- id: tool-subagent" in patch and "disabled: true" in patch, patch
-assert "- id: tool-web" in patch, patch
+if os.environ.get("FIXTURE_EXPECT_ALLOWED") != "1":
+    assert "- id: tool-subagent" in patch and "disabled: true" in patch, patch
+    assert "- id: tool-web" in patch, patch
 if os.environ.get("FIXTURE_EXPECT_MODEL"):
     assert "model: " + json.dumps(os.environ["FIXTURE_EXPECT_MODEL"]) in patch, patch
 if os.environ.get("FIXTURE_EXPECT_BASE_URL"):

@@ -47,8 +47,8 @@ read_files:
 #     tools: [subagents, workflow, web, jobs, goals]
 #     session: action
 #   codex:
-#     agents_md: true
-#     skills: true
+#     agents_md: true   # stage AGENTS.md into CODEX_HOME
+#     skills: true      # stage .agents/skills into CODEX_HOME
 timeout_seconds: 600
 max_input_bytes: 256000
 max_output_bytes: 10000000

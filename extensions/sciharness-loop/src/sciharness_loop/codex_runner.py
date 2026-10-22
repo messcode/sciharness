@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Codex launcher that optionally stages project AGENTS.md and Skills.
 
-Codex reads AGENTS.md and its skill discovery from the working directory.  The
-Loop keeps the project read-only at /input/project and runs Codex in /work, so
-the opt-in capability copies only those reviewed files before exec'ing Codex.
+Codex reads AGENTS.md and its skill discovery from CODEX_HOME.  The Loop keeps
+the project read-only at /input/project and runs Codex in /work, so the opt-in
+capability copies only those reviewed files into CODEX_HOME before exec'ing
+Codex.  Nothing is written into /work, preserving the plan artifact contract.
 """
 from __future__ import annotations
 
@@ -28,11 +29,13 @@ def main(argv=None):
             break
         else:
             break
-    project, work = Path("/input/project"), Path("/work")
+    project = Path("/input/project")
+    home = Path(os.environ.get("CODEX_HOME", "/tmp/codex"))
+    home.mkdir(parents=True, exist_ok=True)
     if agents_md and (project / "AGENTS.md").is_file():
-        shutil.copy2(project / "AGENTS.md", work / "AGENTS.md")
+        shutil.copy2(project / "AGENTS.md", home / "AGENTS.md")
     if skills and (project / ".agents/skills").is_dir():
-        target = work / ".agents/skills"
+        target = home / "skills"
         if target.exists():
             shutil.rmtree(target)
         shutil.copytree(project / ".agents/skills", target)

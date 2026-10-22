@@ -15,9 +15,9 @@ if "HANG" in prompt:
     time.sleep(60)
 runpy.run_path("/opt/sciharness/assert_isolation.py")
 if os.environ.get("FIXTURE_EXPECT_AGENTS_MD") == "1":
-    assert Path("/work/AGENTS.md").is_file()
+    assert Path("/tmp/codex/AGENTS.md").is_file()
 if os.environ.get("FIXTURE_EXPECT_SKILLS") == "1":
-    assert Path("/work/.agents/skills").is_dir()
+    assert Path("/tmp/codex/skills").is_dir()
 schema = json.loads(Path("/input/schema.json").read_text())
 context = json.loads(Path("/input/context.json").read_text())
 assert context["project"]["root"] == "/input/project"

@@ -207,7 +207,8 @@ capabilities:
 - DSH tool groups map to its native `tool-subagent*`, `tool-workflow`,
   `tool-web`, `tool-jobs`, and `tool-goal`. The default disables all of them.
 - Codex uses `codex_runner.py`: it copies only the reviewed `AGENTS.md` and
-  `.agents/skills` from `/input/project` into `/work` before exec'ing Codex. No
+  `.agents/skills` from `/input/project` into `CODEX_HOME` (`/tmp/codex`) before
+  exec'ing Codex. `/work` stays clean for `result.json`/`proposal.md`, and no
   host Codex config, auth, MCP, or user skills are mounted.
 - The capability selection is part of `Policy.fingerprint`, so changing it
   requires a new plan/mission approval.

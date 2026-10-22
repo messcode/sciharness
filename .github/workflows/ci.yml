@@ -88,15 +88,14 @@ jobs:
           docker run --rm --entrypoint dsh -v /tmp/skill-patch.yml:/tmp/skill-patch.yml \
             sciharness-dsh:test --profile headless --patch /tmp/skill-patch.yml --dump-config \
             | grep -q customSkillDirs
-      - name: Verify an opt-in DSH capability group composes
+      - name: Verify the Loop capability patch enables only the selected group
         run: |
-          cat > /tmp/capability-patch.yml <<'EOF'
-          - id: tool-web
-            disabled: false
-          EOF
-          docker run --rm --entrypoint dsh -v /tmp/capability-patch.yml:/tmp/capability-patch.yml \
-            sciharness-dsh:test --profile headless --patch /tmp/capability-patch.yml --dump-config \
-            | grep -A2 'id: tool-web' | grep -q 'disabled: false'
+          docker run --rm --entrypoint bash sciharness-dsh:test -c '
+            python3 -c "import sys; sys.path.insert(0, \"/opt/sciharness\"); from dsh_runner import patch_text; open(\"/tmp/capability-patch.yml\", \"w\").write(patch_text(\"\", allow_tools={\"web\"}))"
+            dsh --profile headless --patch /tmp/capability-patch.yml --dump-config > /tmp/capability-config.yml
+            ! grep -A6 "id: tool-web" /tmp/capability-config.yml | grep -q "disabled: true"
+            grep -A6 "id: tool-jobs" /tmp/capability-config.yml | grep -q "disabled: true"
+          '
       - name: Build the MCP allowlist test image
         run: |
           cp extensions/sciharness-loop/src/sciharness_loop/mcp_proxy.py \

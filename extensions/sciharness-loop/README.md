@@ -2,9 +2,9 @@
 
 Optional, separately installed research execution for SciHarness 0.8. Core keeps
 its original scientific objects, dependencies, scaffold, CLI, and record-only
-behavior. Existing projects need no migration. Loop 0.2 adds configurable Codex
-and DeepSeek backends, bounded autonomous runs, and scheduled execution windows.
-Nothing starts until explicitly authorized.
+behavior. Existing projects need no migration. Loop 0.2 adds configurable Codex,
+DeepSeek, and DSH backends, bounded autonomous runs, and scheduled execution
+windows. Nothing starts until explicitly authorized.
 
 ## Installation and backend selection
 
@@ -29,6 +29,10 @@ docker build --build-arg CODEX_VERSION="$CODEX_VERSION" \
 # DeepSeek: standard-library tool harness; no provider SDK dependency.
 docker build -f extensions/sciharness-loop/Dockerfile.deepseek \
   -t sciharness-deepseek:local extensions/sciharness-loop
+
+# DSH: pinned headless bundle; initializes the shipped headless profile.
+docker build -f extensions/sciharness-loop/Dockerfile.dsh \
+  -t sciharness-dsh:local extensions/sciharness-loop
 ```
 
 Inside a research project, create `.sci/loop/policy.yaml`. Existing v0.1 policies
@@ -52,12 +56,46 @@ loopback HTTP fixtures. See [policy.example.yaml](policy.example.yaml) for all
 common limits. Pin image digests when approval must remain stable across builds;
 each actual image ID and launch is recorded in `executor.json`.
 
+A minimal DSH policy:
+
+```yaml
+schema_version: 1
+mode: step
+backend: dsh
+runtime: docker
+image: sciharness-dsh:local
+model: deepseek-flash   # optional; omitted uses the DSH profile default
+read_files: [docs/CHARTER.md, docs/STATE.md]
+timeout_seconds: 600
+```
+
+DSH is a profile/bundle harness, not a plain CLI. The `dsh` backend uses the
+shipped `headless` one-shot bundle through `dsh_runner.py`. The adapter pins
+`DSH_HOME`, uses the launch `DEEPSEEK_API_KEY` (headless deliberately ignores
+GUI-saved credentials and the managed store), and sets DSH's
+`danger-full-access` permission mode because the Docker container is the
+isolation boundary; without it, headless tool calls wait for an approval nobody
+can answer. To preserve the Loop's one-bounded-action rule, the wrapper disables
+DSH's subagent, workflow, web, background-job, and goal tools; file, shell, skill,
+todo, and working-directory tools remain. `base_url` for DSH is the **Messages
+API root** (`https://api.deepseek.com/anthropic` by default), not the DeepSeek
+Chat Completions root. DSH has no `--model` flag, so the wrapper writes a
+`--patch` for `agent-default-model`. The wrapper streams the headless NDJSON
+events into `executor.log`, derives `result.json` from the file or the terminal
+`final` event, and logs the DSH session id. The image pins
+`@deepseek-ai/dsh@0.2.1-rc.2`; a live model smoke test still requires
+`DEEPSEEK_API_KEY` and network access. DSH owns its model/context/compaction
+settings, so the DeepSeek-only `max_turns`, `max_context_bytes`, and
+`max_completion_tokens` limits do not apply to this backend; the per-action
+Docker timeout/deadline still does.
+
 Provide `CODEX_API_KEY` or `DEEPSEEK_API_KEY` through the invocation's environment
 or your worker's secret manager. Only the selected adapter's credential is
 forwarded. Credentials are never written to policy/checkpoints/launch arguments;
 research code inside that container can read its provider credential. No host
 home, saved CLI auth, other service credentials, or Docker config is mounted.
-There is no credential proxy in this release.
+There is no credential proxy in this release. DSH uses `DEEPSEEK_API_KEY`; its
+headless profile intentionally does not consume credentials saved by the DSH GUI.
 
 | Mode | Authority |
 | --- | --- |
@@ -256,10 +294,11 @@ The controller selects a `HarnessAdapter` and `ExecutionRuntime`. Adapters own
 commands, model options, and credential names. Runtimes own containment, read-only
 mounts, stop, deadlines, and resource enforcement. Codex uses its CLI; DeepSeek
 uses the bundled text-file/shell tool loop through the documented Chat Completions
-protocol. The DeepSeek adapter is a direct API tool loop, not the DSH harness; a
-DSH integration would be a separate `HarnessAdapter` (the controller/runtime
-boundary is reusable). Both supplied adapters produce the same result schemas and
-use the same review gates.
+protocol; DSH uses the shipped one-shot `headless` bundle through
+`dsh_runner.py`. The DeepSeek adapter remains a direct API tool loop (not DSH).
+The DSH adapter owns DSH's profile/home, non-interactive permission mode, model
+patch, minimal tool surface, NDJSON stream, session logging, and result contract.
+All three adapters produce the same result schemas and use the same review gates.
 The `CodexExecutor` facade remains for existing integrations. Default v0.1
 policy fingerprints remain valid when new options retain their defaults.
 
@@ -275,14 +314,17 @@ python -m pytest -q extensions/sciharness-loop/tests
 SCI_LOOP_TEST_DOCKER=1 python -m pytest -q extensions/sciharness-loop/tests/test_docker.py
 ```
 
-Tests cover both adapters against common controller contracts, the production
-DeepSeek tool loop over a local HTTP fixture, policy/input integrity, cumulative
-budgets, overnight/DST windows, interruption/reservations, review, and packaging.
-Mandatory CI Docker tests exercise both backends, read-only mounts, symlink
-rejection, a bounded cycle, and stopping a live container after controller death.
-No live provider calls or real API keys are used in CI. Actual model behavior
-still requires an operator-configured smoke test.
+Tests cover all three adapters against common controller contracts, the production
+DeepSeek tool loop over a local HTTP fixture, the DSH headless wrapper/profile
+patch, policy/input integrity, cumulative budgets, overnight/DST windows,
+interruption/reservations, review, and packaging. Mandatory CI Docker tests
+exercise all three backends, read-only mounts, symlink rejection, a bounded cycle,
+and stopping a live container after controller death. A separate CI job builds
+`Dockerfile.dsh` and verifies `dsh --version` plus the initialized headless profile
+without calling a model. No live provider calls or real API keys are used in CI.
+Actual model behavior still requires an operator-configured smoke test.
 
 Primary protocol references: [Codex non-interactive execution](https://developers.openai.com/codex/noninteractive/),
-[DeepSeek tool calls](https://api-docs.deepseek.com/guides/tool_calls/), and
-[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/).
+[DeepSeek tool calls](https://api-docs.deepseek.com/guides/tool_calls/),
+[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/),
+and [DSH headless one-shot](https://github.com/deepseek-ai/deepseek-harness).

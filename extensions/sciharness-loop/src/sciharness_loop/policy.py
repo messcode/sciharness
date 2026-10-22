@@ -77,8 +77,8 @@ def load_policy(root: Path) -> Policy:
     policy = Policy(**{k: v for k, v in raw.items() if k != "schema_version"})
     if policy.mode not in ("record_only", "suggest", "step", "guarded_auto"):
         raise LoopError("mode must be record_only, suggest, step, or guarded_auto")
-    if policy.backend not in ("codex", "deepseek") or policy.runtime != "docker":
-        raise LoopError("unsupported backend/runtime; supported: codex/deepseek with docker")
+    if policy.backend not in ("codex", "deepseek", "dsh") or policy.runtime != "docker":
+        raise LoopError("unsupported backend/runtime; supported: codex/deepseek/dsh with docker")
     if not isinstance(policy.model, str) or not isinstance(policy.base_url, str):
         raise LoopError("model and base_url must be strings")
     if policy.backend == "deepseek" and not policy.model.strip():
@@ -95,7 +95,7 @@ def load_policy(root: Path) -> Policy:
         if invalid:
             raise LoopError("base_url must use HTTPS (HTTP allowed only for loopback testing)")
     if policy.backend == "codex" and policy.base_url:
-        raise LoopError("base_url is a DeepSeek adapter option")
+        raise LoopError("base_url is a DeepSeek/DSH adapter option")
     if not isinstance(policy.read_mounts, dict):
         raise LoopError("read_mounts must map aliases to project data paths")
     dataset_mounts(root, policy)

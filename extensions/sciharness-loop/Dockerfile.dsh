@@ -1,0 +1,22 @@
+# Production DSH harness image for sciharness-loop.
+#
+# DSH is a Node application made of profile/bundle layers.  This image installs
+# the CLI, initializes the shipped `headless` one-shot profile under DSH_HOME,
+# and runs the SciHarness wrapper.  The wrapper supplies the model/tool patches,
+# non-interactive permission mode, and result contract at action time.
+FROM node:24-bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @deepseek-ai/dsh@0.2.1-rc.2
+
+ENV DSH_HOME=/opt/dsh-home
+RUN mkdir -p /opt/dsh-home \
+    && dsh --profile headless --help >/dev/null
+
+COPY src/sciharness_loop/dsh_runner.py /opt/sciharness/dsh_runner.py
+
+WORKDIR /work
+ENTRYPOINT ["python3", "/opt/sciharness/dsh_runner.py"]

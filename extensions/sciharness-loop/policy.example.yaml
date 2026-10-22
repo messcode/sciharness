@@ -5,11 +5,19 @@ mode: step
 backend: codex
 runtime: docker
 image: sciharness-codex:local
-# Optional for Codex, required for DeepSeek. Provider-specific credentials are
-# supplied only through the invocation/worker environment.
+# Optional for Codex, required for DeepSeek, optional for DSH (the DSH profile
+# default is deepseek-flash). Provider-specific credentials are supplied only
+# through the invocation/worker environment.
 model: ''
 # For DeepSeek: use backend: deepseek, its image, and an explicitly chosen model.
 # base_url: https://api.deepseek.com
+# For DSH: use backend: dsh and Dockerfile.dsh. base_url is the DSH Messages API
+# root, not the Chat Completions root; DEEPSEEK_API_KEY is read from the launch
+# environment (the headless profile ignores GUI-saved credentials).
+# backend: dsh
+# image: sciharness-dsh:local
+# base_url: https://api.deepseek.com/anthropic
+# These three apply to the DeepSeek tool loop; DSH owns these settings in its profile.
 # max_turns: 24
 # max_context_bytes: 1000000
 # max_completion_tokens: 4096

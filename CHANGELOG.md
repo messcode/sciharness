@@ -21,9 +21,16 @@ Optional human-controlled Research Loop.
 
 ### Loop 0.2.0
 
-- Split harness adapters from the Docker execution runtime. Ship Codex and a
-  bundled DeepSeek Chat Completions tool loop; the latter is a direct API adapter,
-  not the DSH harness.
+- Split harness adapters from the Docker execution runtime. Ship Codex, a
+  bundled DeepSeek Chat Completions tool loop, and a DSH headless adapter. The
+  DeepSeek backend remains a direct API tool loop; DSH runs its shipped
+  `headless` bundle through a dedicated wrapper/image.
+- The DSH adapter pins `DSH_HOME`, uses the launch `DEEPSEEK_API_KEY`, selects
+  DSH's non-interactive permission mode (the Docker container is the isolation
+  boundary), patches the model because headless has no `--model` flag, limits
+  the tool surface to one bounded action, streams the NDJSON run into
+  `executor.log`, and maps the terminal answer to `/work/result.json`. DSH's
+  Messages API `base_url` is distinct from the DeepSeek Chat Completions root.
 - Added `guarded_auto` missions with cumulative runtime budgets, cycle limits,
   one-shot IANA/offset-aware execution windows, pause/recovery/resumption,
   preliminary reports, and scheduler-dispatched due runs.

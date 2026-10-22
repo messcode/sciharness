@@ -1,7 +1,10 @@
 import dataclasses
 import json
+import os
 import subprocess
+import sys
 import threading
+from pathlib import Path
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -9,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import set_policy
-from sciharness_loop.adapters import CodexAdapter, DeepSeekAdapter, adapter_for
+from sciharness_loop.adapters import CodexAdapter, DeepSeekAdapter, DshAdapter, adapter_for
 from sciharness_loop.controller import Controller, PLAN_SCHEMA
 from sciharness_loop.deepseek_runner import Runner
 from sciharness_loop.executor import HarnessExecutor, make_executor
@@ -126,8 +129,8 @@ def test_model_and_provider_credentials_are_adapter_specific():
         adapter_for("unknown")
 
 
-@pytest.mark.parametrize("backend", ["codex", "deepseek"])
-def test_same_controller_contract_for_both_harnesses(enabled, executor, monkeypatch, backend):
+@pytest.mark.parametrize("backend", ["codex", "deepseek", "dsh"])
+def test_same_controller_contract_for_all_harnesses(enabled, executor, monkeypatch, backend):
     from sciharness_loop import controller as module
     set_policy(enabled, backend=backend, model="explicit-model")
     seen = []
@@ -239,3 +242,108 @@ def test_watchdog_inspect_timeout_does_not_drop_the_deadline(tmp_path, monkeypat
 def test_executor_factory_uses_configured_harness(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker")
     assert make_executor(Policy(backend="deepseek", model="chosen")).adapter.__class__ is DeepSeekAdapter
+    assert make_executor(Policy(backend="dsh", model="chosen")).adapter.__class__ is DshAdapter
+
+
+def test_dsh_adapter_is_headless_and_noninteractive():
+    invocation = adapter_for("dsh").invocation(Policy(
+        backend="dsh", model="deepseek-chat",
+        base_url="https://api.deepseek.com/anthropic"))
+    assert invocation.backend == "dsh"
+    assert invocation.entrypoint == "python3"
+    assert invocation.args[0].endswith("dsh_runner.py")
+    assert invocation.args[invocation.args.index("--model") + 1] == "deepseek-chat"
+    assert invocation.args[invocation.args.index("--base-url") + 1] == "https://api.deepseek.com/anthropic"
+    assert invocation.credentials == ("DEEPSEEK_API_KEY",)
+    assert "DSH_HOME=/tmp/dsh-home" in invocation.environment
+    assert "DSH_PERMISSION_MODE=danger-full-access" in invocation.environment
+
+
+def test_dsh_policy_allows_the_profile_default_model(project):
+    set_policy(project, backend="dsh", model="", image="sciharness-dsh:local",
+               base_url="https://api.deepseek.com/anthropic")
+    policy = load_policy(project)
+    assert policy.backend == "dsh" and policy.model == ""
+    assert policy.base_url == "https://api.deepseek.com/anthropic"
+
+
+FAKE_DSH = '''#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+prompt = sys.stdin.read()
+assert "Harness result contract" in prompt
+args = sys.argv[1:]
+assert "--profile" in args and "headless" in args, args
+assert "--json" in args and "-" in args, args
+patch = Path(args[args.index("--patch") + 1]).read_text()
+assert "- id: tool-subagent" in patch and "- id: tool-web" in patch, patch
+assert 'model: "deepseek-chat"' in patch, patch
+assert os.environ["DSH_PERMISSION_MODE"] == "danger-full-access"
+assert os.environ["DSH_HOME"] == "/tmp/dsh-home"
+assert os.environ["DEEPSEEK_BASE_URL"] == "https://api.deepseek.com/anthropic"
+if os.environ.get("FAKE_DSH_ERROR") == "1":
+    print(json.dumps({"type": "session", "sessionId": "session-fixture"}))
+    print(json.dumps({"type": "error", "message": "boom"}))
+    raise SystemExit(1)
+schema = json.loads((Path(os.environ["SCI_LOOP_INPUT"]) / "schema.json").read_text())
+work = Path(os.environ["SCI_LOOP_WORK"])
+if "title" in schema["properties"]:
+    result = {"title": "dsh pilot", "task": "pilot", "rationale": "fixture"}
+    if os.environ.get("FAKE_DSH_WRITE_RESULT") == "1":
+        (work / "result.json").write_text(json.dumps(result))
+else:
+    (work / "proposal.md").write_text("fixture proposal\\n")
+    (work / "artifacts").mkdir()
+    result = {"summary": "fixture", "limitations": "fixture", "checks": ["fixture"],
+              "needs_human_review": True}
+print(json.dumps({"type": "session", "sessionId": "session-fixture"}))
+print(json.dumps({"type": "final", "text": json.dumps(result)}))
+'''
+
+
+def run_dsh_runner(tmp_path, *, write_result, error=False):
+    input_dir, work = tmp_path / "input", tmp_path / "work"
+    input_dir.mkdir()
+    work.mkdir()
+    (input_dir / "schema.json").write_text(json.dumps(PLAN_SCHEMA))
+    fake = tmp_path / "dsh"
+    fake.write_text(FAKE_DSH, encoding="utf-8")
+    fake.chmod(0o755)
+    env = {**os.environ,
+           "DSH_BIN": str(fake), "SCI_LOOP_INPUT": str(input_dir),
+           "SCI_LOOP_WORK": str(work), "DEEPSEEK_API_KEY": "unused-fixture-key",
+           "FAKE_DSH_WRITE_RESULT": "1" if write_result else "0"}
+    for name in ("DSH_HOME", "DSH_PERMISSION_MODE", "DEEPSEEK_BASE_URL"):
+        env.pop(name, None)
+    if error:
+        env["FAKE_DSH_ERROR"] = "1"
+    runner = Path(__file__).parents[1] / "src/sciharness_loop/dsh_runner.py"
+    completed = subprocess.run(
+        [sys.executable, str(runner), "--model", "deepseek-chat",
+         "--base-url", "https://api.deepseek.com/anthropic"],
+        input="Do one action.", text=True, capture_output=True, env=env)
+    return completed, work
+
+
+def test_dsh_runner_preserves_the_result_file(tmp_path):
+    completed, work = run_dsh_runner(tmp_path, write_result=True)
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads((work / "result.json").read_text())
+    assert result["title"] == "dsh pilot"
+    assert '"type": "final"' in completed.stdout
+    assert "dsh session: session-fixture" in completed.stderr
+
+
+def test_dsh_runner_falls_back_to_the_final_json_answer(tmp_path):
+    completed, work = run_dsh_runner(tmp_path, write_result=False)
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads((work / "result.json").read_text())["task"] == "pilot"
+
+
+def test_dsh_runner_reports_headless_errors(tmp_path):
+    completed, _ = run_dsh_runner(tmp_path, write_result=False, error=True)
+    assert completed.returncode == 1
+    assert "boom" in completed.stderr

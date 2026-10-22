@@ -158,7 +158,7 @@ the `scientific-research` / `scientific-figures` Skills under `.agents/skills/`.
 
 Research execution is available as the separately installed `sciharness-loop`
 extension. It provides `plan`, `step`, `status`, and approved budgeted `run`
-commands, with Codex/DeepSeek adapters, Docker isolation, scheduled execution
+commands, with Codex/DeepSeek/DSH adapters, Docker isolation, scheduled execution
 windows, and human result review. Installing or using Core alone keeps
 the original record-only workflow; no Loop policy, agent runtime, or project
 migration is required. See the extension documentation for opt-in and limits.

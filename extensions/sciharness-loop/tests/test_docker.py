@@ -51,12 +51,13 @@ def docker_image(tmp_path_factory):
     build = tmp_path_factory.mktemp("loop-container-fixture")
     shutil.copytree(fixtures, build, dirs_exist_ok=True)
     shutil.copy2(Path(__file__).parents[1] / "src/sciharness_loop/deepseek_runner.py", build / "deepseek_runner.py")
+    shutil.copy2(Path(__file__).parents[1] / "src/sciharness_loop/dsh_runner.py", build / "dsh_runner.py")
     tag = "sci-loop-test:local"
     subprocess.run([binary, "build", "-t", tag, str(build)], check=True, capture_output=True)
     return tag
 
 
-@pytest.mark.parametrize("backend", ["codex", "deepseek"])
+@pytest.mark.parametrize("backend", ["codex", "deepseek", "dsh"])
 def test_real_container_cannot_read_or_write_live_project(project, docker_image, monkeypatch, backend):
     dataset = project / "data/subset"
     dataset.mkdir()
@@ -76,7 +77,7 @@ def test_real_container_cannot_read_or_write_live_project(project, docker_image,
     assert accepted["state"] == "accepted"
 
 
-@pytest.mark.parametrize("backend", ["codex", "deepseek"])
+@pytest.mark.parametrize("backend", ["codex", "deepseek", "dsh"])
 def test_real_budgeted_cycle_uses_same_review_boundary(project, docker_image, monkeypatch, backend, tmp_path):
     import yaml
     set_policy(project, mode="guarded_auto", image=docker_image, network="none", backend=backend,
@@ -98,7 +99,7 @@ def test_real_budgeted_cycle_uses_same_review_boundary(project, docker_image, mo
     assert scientific_files(project) == before
 
 
-@pytest.mark.parametrize("backend", ["codex", "deepseek"])
+@pytest.mark.parametrize("backend", ["codex", "deepseek", "dsh"])
 def test_deadline_survives_controller_process_death(docker_image, tmp_path, monkeypatch, backend):
     inputs, work = tmp_path / "input", tmp_path / "work"
     (inputs / "project/docs").mkdir(parents=True)
@@ -165,7 +166,7 @@ def test_deadline_survives_controller_process_death(docker_image, tmp_path, monk
         subprocess.run(docker + ["rm", "--force", "sci-loop-" + run_id], capture_output=True)
 
 
-@pytest.mark.parametrize("backend", ["codex", "deepseek"])
+@pytest.mark.parametrize("backend", ["codex", "deepseek", "dsh"])
 def test_container_symlink_escape_is_not_promoted(project, docker_image, monkeypatch, backend):
     set_policy(project, image=docker_image, network="none", backend=backend,
                model="fixture-model", base_url="http://127.0.0.1:17651" if backend == "deepseek" else "")

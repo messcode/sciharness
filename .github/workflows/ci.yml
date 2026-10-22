@@ -88,3 +88,30 @@ jobs:
           docker run --rm --entrypoint dsh -v /tmp/skill-patch.yml:/tmp/skill-patch.yml \
             sciharness-dsh:test --profile headless --patch /tmp/skill-patch.yml --dump-config \
             | grep -q customSkillDirs
+      - name: Build the MCP allowlist test image
+        run: |
+          cp extensions/sciharness-loop/src/sciharness_loop/mcp_proxy.py \
+            extensions/sciharness-loop/tests/fixtures/mcp_proxy.py
+          docker build -f extensions/sciharness-loop/tests/fixtures/Dockerfile.dsh-mcp \
+            -t sciharness-dsh-mcp:test extensions/sciharness-loop/tests/fixtures
+      - name: Verify the MCP proxy starts under the real headless profile
+        run: |
+          cat > /tmp/mcp-patch.yml <<'EOF'
+          - insert:
+              - id: mcp-fixture
+                name: '@deepseek-ai/dsh-mcp-client'
+                config:
+                  serverName: fixture
+                  transport: stdio
+                  command: python3
+                  args: ["/opt/sciharness/mcp_proxy.py", "/tmp/mcp-fixture.json"]
+                  failOnStartupError: true
+                  toolCallTimeoutMs: 5000
+          EOF
+          cat > /tmp/mcp-fixture.json <<'EOF'
+          {"command": ["python3", "/opt/sciharness/mcp_fixture_server.py"], "env": [], "tools": ["lookup"], "timeout_seconds": 5}
+          EOF
+          docker run --rm -v /tmp/mcp-patch.yml:/tmp/mcp-patch.yml \
+            -v /tmp/mcp-fixture.json:/tmp/mcp-fixture.json \
+            --entrypoint dsh sciharness-dsh-mcp:test --profile headless \
+            --patch /tmp/mcp-patch.yml --help

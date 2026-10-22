@@ -48,7 +48,7 @@ def contract_note(input_dir, work_dir):
     )
 
 
-def patch_text(model, skills_dir=None):
+def patch_text(model, skills_dir=None, mcp_servers=None):
     rows = []
     if model:
         rows.extend([
@@ -64,9 +64,46 @@ def patch_text(model, skills_dir=None):
             "    customSkillDirs:",
             "      - " + json.dumps(str(skills_dir)),
         ])
+    if mcp_servers:
+        rows.append("- insert:")
+        for server in mcp_servers:
+            name = server["name"]
+            rows.extend([
+                "    - id: mcp-" + name,
+                "      name: '@deepseek-ai/dsh-mcp-client'",
+                "      config:",
+                "        serverName: " + json.dumps(name),
+                "        transport: stdio",
+                "        command: python3",
+                "        args:",
+                "          - /opt/sciharness/mcp_proxy.py",
+                "          - " + json.dumps("/tmp/mcp-" + name + ".json"),
+            ])
+            env_names = server.get("env", [])
+            if env_names:
+                rows.append("        env:")
+                for env_name in env_names:
+                    rows.append("          " + env_name + ": !!js process.env." + env_name)
+            rows.extend([
+                "        failOnStartupError: true",
+                "        toolCallTimeoutMs: " + str(server.get("timeout_seconds", 60) * 1000),
+            ])
     for name in DISABLED_TOOLS:
         rows.extend(["- id: " + name, "  disabled: true"])
     return "\n".join(rows) + "\n"
+
+
+def write_mcp_configs(mcp):
+    servers = (mcp or {}).get("servers", [])
+    for server in servers:
+        path = Path("/tmp/mcp-" + server["name"] + ".json")
+        path.write_text(json.dumps({
+            "command": server["command"],
+            "env": server.get("env", []),
+            "tools": server["tools"],
+            "timeout_seconds": server.get("timeout_seconds", 60),
+        }, sort_keys=True) + "\n", encoding="utf-8")
+    return servers
 
 
 def parse_final(text):
@@ -106,7 +143,10 @@ def run(args):
     work_dir.mkdir(parents=True, exist_ok=True)
     patch = Path("/tmp/dsh-sci-loop-patch.yml")
     skills_dir = input_dir / "project/.agents/skills"
-    patch.write_text(patch_text(args.model, skills_dir if skills_dir.is_dir() else None),
+    mcp = json.loads(args.mcp_json) if args.mcp_json else None
+    mcp_servers = write_mcp_configs(mcp)
+    patch.write_text(patch_text(args.model, skills_dir if skills_dir.is_dir() else None,
+                                mcp_servers),
                      encoding="utf-8")
 
     # The runtime mounts the container root read-only and provides only /tmp as
@@ -200,6 +240,8 @@ def main(argv=None):
                         help="DSH model id; omitted uses the profile default")
     parser.add_argument("--base-url", default="",
                         help="DSH Messages API root (DEEPSEEK_BASE_URL)")
+    parser.add_argument("--mcp-json", default="",
+                        help="default-off MCP server allowlist JSON")
     args = parser.parse_args(argv)
     try:
         return run(args)

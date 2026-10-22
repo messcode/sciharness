@@ -33,6 +33,12 @@ docker build -f extensions/sciharness-loop/Dockerfile.deepseek \
 # DSH: pinned headless bundle; initializes the shipped headless profile.
 docker build -f extensions/sciharness-loop/Dockerfile.dsh \
   -t sciharness-dsh:local extensions/sciharness-loop
+
+# Optional MCP: add exactly one pinned server package to the DSH image.
+docker build -f extensions/sciharness-loop/Dockerfile.dsh-mcp \
+  --build-arg MCP_SERVER_PACKAGE='REPLACE_WITH_PACKAGE' \
+  --build-arg MCP_SERVER_VERSION='REPLACE_WITH_VERSION' \
+  -t sciharness-dsh-mcp:local extensions/sciharness-loop
 ```
 
 Inside a research project, create `.sci/loop/policy.yaml`. Existing v0.1 policies
@@ -148,6 +154,41 @@ DSH discovers them through a `skill-filesystem.customSkillDirs` patch and expose
 them via its native `tool-skill`; Codex and the DeepSeek tool loop can read the
 same files through their normal file tools. Skills are read-only in the
 container and are never loaded from the host's user-level skill directories.
+
+## MCP (default off)
+
+No MCP server is enabled by the generic DSH image. MCP is opt-in through a
+`mcp.servers` policy block and a **separate** `Dockerfile.dsh-mcp` image that
+bakes the reviewed, pinned server package. The server runs inside the same
+Docker container as DSH; no host MCP configuration, host credentials, or host
+processes are used.
+
+Each server is reached through `mcp_proxy.py`. The proxy:
+
+- forwards JSON-RPC to the real stdio server;
+- filters `tools/list` to the explicit `tools` allowlist;
+- returns an error for any non-allowlisted `tools/call`;
+- starts the server with only the named `env` variables and `PATH`/`HOME`;
+- never stores credential values in the policy or the proxy config.
+
+The allowlist, command, server name, timeout, and credential variable names are
+part of the policy fingerprint and therefore the mission/step approval hash.
+Changing any of them requires new authorization. MCP tool results and server
+instructions are untrusted input and remain subject to human review. This
+release supports **stdio** MCP servers only; Streamable HTTP MCP is not enabled
+because the allowlist proxy would need a separate network/transport policy.
+
+A minimal MCP policy (the image and `command` are deployment-specific):
+
+```yaml
+mcp:
+  servers:
+    - name: fixture
+      command: [python3, /opt/sciharness/mcp_fixture_server.py]
+      tools: [lookup]
+      env: [MCP_TOKEN]
+      timeout_seconds: 60
+```
 
 ## Budgeted runs and overnight scheduling
 
@@ -331,9 +372,9 @@ SCI_LOOP_TEST_DOCKER=1 python -m pytest -q extensions/sciharness-loop/tests/test
 
 Tests cover all three adapters against common controller contracts, the production
 DeepSeek tool loop over a local HTTP fixture, the DSH headless wrapper/profile
-patch, project-Skill provisioning and review binding, policy/input integrity,
-cumulative budgets, overnight/DST windows, interruption/reservations, review, and
-packaging. Mandatory CI Docker tests
+patch, project-Skill provisioning and review binding, the default-off MCP
+allowlist/proxy and DSH patch, policy/input integrity, cumulative budgets,
+overnight/DST windows, interruption/reservations, review, and packaging. Mandatory CI Docker tests
 exercise all three backends, read-only mounts, symlink rejection, a bounded cycle,
 and stopping a live container after controller death. A separate CI job builds
 `Dockerfile.dsh` and verifies `dsh --version` plus the initialized headless profile

@@ -291,6 +291,11 @@ if os.environ.get("FAKE_DSH_ERROR") == "1":
 skills = Path(os.environ["SCI_LOOP_INPUT"]) / "project/.agents/skills"
 if skills.is_dir():
     assert "- id: skill-filesystem" in patch and "customSkillDirs" in patch, patch
+if os.environ.get("FAKE_DSH_EXPECT_MCP") == "1":
+    assert "- insert:" in patch and "dsh-mcp-client" in patch, patch
+    assert "mcp-fixture" in patch and "toolCallTimeoutMs" in patch, patch
+    assert "MCP_TOKEN" in patch, patch
+    assert Path("/tmp/mcp-fixture.json").is_file()
 schema = json.loads((Path(os.environ["SCI_LOOP_INPUT"]) / "schema.json").read_text())
 work = Path(os.environ["SCI_LOOP_WORK"])
 if "title" in schema["properties"]:
@@ -307,33 +312,42 @@ print(json.dumps({"type": "final", "text": json.dumps(result)}))
 '''
 
 
-def run_dsh_runner(tmp_path, *, write_result, error=False, skill=False):
+def run_dsh_runner(tmp_path, *, write_result, error=False, skill=False, mcp=False):
     input_dir, work = tmp_path / "input", tmp_path / "work"
     input_dir.mkdir()
     work.mkdir()
     (input_dir / "schema.json").write_text(json.dumps(PLAN_SCHEMA))
+    args = [sys.executable, str(Path(__file__).parents[1] / "src/sciharness_loop/dsh_runner.py"),
+            "--model", "deepseek-chat", "--base-url", "https://api.deepseek.com/anthropic"]
     if skill:
         folder = input_dir / "project/.agents/skills/scientific-research"
         folder.mkdir(parents=True)
         (folder / "SKILL.md").write_text(
             "---\nname: scientific-research\ndescription: Fixture skill\n---\n",
             encoding="utf-8")
+    if mcp:
+        config = {"servers": [{
+            "name": "fixture",
+            "command": [sys.executable, str(Path(__file__).parent / "fixtures/mcp_fixture_server.py")],
+            "tools": ["lookup"], "env": ["MCP_TOKEN"], "timeout_seconds": 5,
+        }]}
+        args += ["--mcp-json", json.dumps(config)]
     fake = tmp_path / "dsh"
     fake.write_text(FAKE_DSH, encoding="utf-8")
     fake.chmod(0o755)
     env = {**os.environ,
            "DSH_BIN": str(fake), "SCI_LOOP_INPUT": str(input_dir),
            "SCI_LOOP_WORK": str(work), "DEEPSEEK_API_KEY": "unused-fixture-key",
-           "FAKE_DSH_WRITE_RESULT": "1" if write_result else "0"}
+           "FAKE_DSH_WRITE_RESULT": "1" if write_result else "0",
+           "MCP_TOKEN": "fixture-token"}
     for name in ("DSH_HOME", "DSH_PERMISSION_MODE", "DEEPSEEK_BASE_URL"):
         env.pop(name, None)
     if error:
         env["FAKE_DSH_ERROR"] = "1"
-    runner = Path(__file__).parents[1] / "src/sciharness_loop/dsh_runner.py"
+    if mcp:
+        env["FAKE_DSH_EXPECT_MCP"] = "1"
     completed = subprocess.run(
-        [sys.executable, str(runner), "--model", "deepseek-chat",
-         "--base-url", "https://api.deepseek.com/anthropic"],
-        input="Do one action.", text=True, capture_output=True, env=env)
+        args, input="Do one action.", text=True, capture_output=True, env=env)
     return completed, work
 
 
@@ -360,4 +374,9 @@ def test_dsh_runner_reports_headless_errors(tmp_path):
 
 def test_dsh_runner_exposes_skills_to_the_skill_provider(tmp_path):
     completed, _ = run_dsh_runner(tmp_path, write_result=False, skill=True)
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_dsh_runner_writes_mcp_allowlist_patch(tmp_path):
+    completed, _ = run_dsh_runner(tmp_path, write_result=False, mcp=True)
     assert completed.returncode == 0, completed.stderr

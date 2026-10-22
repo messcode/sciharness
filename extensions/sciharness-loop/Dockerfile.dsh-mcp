@@ -1,0 +1,16 @@
+# MCP-enabled DSH image. Build from the reviewed DSH image and install exactly
+# one pinned MCP server package (or bake an equivalent reviewed server).
+#
+# The server is reached through /opt/sciharness/mcp_proxy.py: the policy's tool
+# allowlist is enforced before DSH sees the server's tools.  No MCP server is
+# enabled in the generic Dockerfile.dsh.
+ARG DSH_BASE=sciharness-dsh:local
+FROM ${DSH_BASE}
+
+ARG MCP_SERVER_PACKAGE
+ARG MCP_SERVER_VERSION
+RUN test -n "${MCP_SERVER_PACKAGE}" \
+    && test -n "${MCP_SERVER_VERSION}" \
+    && npm install -g "${MCP_SERVER_PACKAGE}@${MCP_SERVER_VERSION}"
+
+COPY src/sciharness_loop/mcp_proxy.py /opt/sciharness/mcp_proxy.py

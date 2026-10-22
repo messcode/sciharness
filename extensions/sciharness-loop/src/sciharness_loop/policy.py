@@ -32,6 +32,9 @@ class Policy:
     max_context_bytes: int = 1_000_000
     max_completion_tokens: int = 4096
     read_mounts: dict = field(default_factory=dict)
+    # Optional, default-off MCP stdio servers.  Only allowlisted tools are
+    # exposed by the proxy; env holds credential variable names, never values.
+    mcp: dict | None = None
     # Controller-owned execution controls, never accepted from policy.yaml.
     _deadline_epoch: float = 0
     _cancel_file: str = ""
@@ -41,7 +44,7 @@ class Policy:
         values = asdict(self)
         defaults = asdict(Policy())
         new = {"backend", "runtime", "model", "base_url", "max_turns",
-               "max_context_bytes", "max_completion_tokens", "read_mounts", "skills"}
+               "max_context_bytes", "max_completion_tokens", "read_mounts", "skills", "mcp"}
         # Keep v0.1 approvals valid when all new options retain their defaults.
         return digest({k: v for k, v in values.items() if not k.startswith("_")
                        and (k not in new or v != defaults[k])})
@@ -106,6 +109,42 @@ def load_policy(root: Path) -> Policy:
         raise LoopError("skills must be simple project skill directory names")
     if len(set(policy.skills)) != len(policy.skills):
         raise LoopError("duplicate skill entry")
+    if policy.mcp is not None:
+        if not isinstance(policy.mcp, dict) or set(policy.mcp) != {"servers"}:
+            raise LoopError("mcp must contain only a servers list")
+        servers = policy.mcp["servers"]
+        if not isinstance(servers, list):
+            raise LoopError("mcp servers must be a list")
+        names = set()
+        for server in servers:
+            if (not isinstance(server, dict)
+                    or set(server) - {"name", "command", "tools", "env", "timeout_seconds"}):
+                raise LoopError("invalid mcp server entry")
+            name = server.get("name")
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", name):
+                raise LoopError("invalid mcp server name")
+            if name in names:
+                raise LoopError("duplicate mcp server name")
+            names.add(name)
+            command = server.get("command")
+            if (not isinstance(command, list) or not command
+                    or not all(isinstance(part, str) and part for part in command)):
+                raise LoopError("mcp server command must be a non-empty string list")
+            tools = server.get("tools")
+            if (not isinstance(tools, list) or not tools
+                    or any(not isinstance(tool, str)
+                           or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", tool) for tool in tools)
+                    or len(set(tools)) != len(tools)):
+                raise LoopError("mcp tools must be a non-empty unique allowlist")
+            env = server.get("env", [])
+            if (not isinstance(env, list)
+                    or any(not isinstance(item, str)
+                           or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", item) for item in env)
+                    or len(set(env)) != len(env)):
+                raise LoopError("mcp env must be unique environment variable names")
+            timeout = server.get("timeout_seconds", 60)
+            if type(timeout) is not int or not 1 <= timeout <= 3600:
+                raise LoopError("mcp timeout_seconds must be 1..3600")
     dataset_mounts(root, policy)
     if policy.network not in ("bridge", "none"):
         raise LoopError("network must be bridge or none; host networking is forbidden")

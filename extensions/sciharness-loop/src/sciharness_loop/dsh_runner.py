@@ -17,20 +17,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-# These DSH tools exceed the Loop's "one bounded exploratory action" contract:
-# they can spawn other agents, orchestrate workflows, run background jobs, or
-# browse the web.  The file, shell, skill, todo, and working-directory tools stay
-# available.  The Docker container remains the actual isolation boundary.
-DISABLED_TOOLS = (
-    "tool-jobs",
-    "tool-subagent-control",
-    "tool-subagent-list-agents",
-    "tool-subagent",
-    "tool-subagent-fork",
-    "tool-workflow",
-    "tool-goal",
-    "tool-web",
-)
+# Default-bounded DSH tool groups.  The policy may opt into any group; the
+# default disables all of them.  The file, shell, skill, todo, and
+# working-directory tools stay available.  Docker remains the isolation boundary.
+TOOL_GROUPS = {
+    "subagents": ("tool-subagent-control", "tool-subagent-list-agents",
+                  "tool-subagent", "tool-subagent-fork"),
+    "workflow": ("tool-workflow",),
+    "web": ("tool-web",),
+    "jobs": ("tool-jobs",),
+    "goals": ("tool-goal",),
+}
 
 
 def contract_note(input_dir, work_dir):
@@ -48,7 +45,7 @@ def contract_note(input_dir, work_dir):
     )
 
 
-def patch_text(model, skills_dir=None, mcp_servers=None):
+def patch_text(model, skills_dir=None, mcp_servers=None, allow_tools=()):
     rows = []
     if model:
         rows.extend([
@@ -88,8 +85,11 @@ def patch_text(model, skills_dir=None, mcp_servers=None):
                 "        failOnStartupError: true",
                 "        toolCallTimeoutMs: " + str(server.get("timeout_seconds", 60) * 1000),
             ])
-    for name in DISABLED_TOOLS:
-        rows.extend(["- id: " + name, "  disabled: true"])
+    for group, names in TOOL_GROUPS.items():
+        if group in allow_tools:
+            continue
+        for name in names:
+            rows.extend(["- id: " + name, "  disabled: true"])
     return "\n".join(rows) + "\n"
 
 
@@ -145,8 +145,9 @@ def run(args):
     skills_dir = input_dir / "project/.agents/skills"
     mcp = json.loads(args.mcp_json) if args.mcp_json else None
     mcp_servers = write_mcp_configs(mcp)
+    allow_tools = {item for item in args.allow_tools.split(",") if item}
     patch.write_text(patch_text(args.model, skills_dir if skills_dir.is_dir() else None,
-                                mcp_servers),
+                                mcp_servers, allow_tools),
                      encoding="utf-8")
 
     # The runtime mounts the container root read-only and provides only /tmp as
@@ -242,6 +243,8 @@ def main(argv=None):
                         help="DSH Messages API root (DEEPSEEK_BASE_URL)")
     parser.add_argument("--mcp-json", default="",
                         help="default-off MCP server allowlist JSON")
+    parser.add_argument("--allow-tools", default="",
+                        help="comma-separated DSH capability groups to enable")
     args = parser.parse_args(argv)
     try:
         return run(args)

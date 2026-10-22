@@ -35,6 +35,12 @@ class Policy:
     # Optional, default-off MCP stdio servers.  Only allowlisted tools are
     # exposed by the proxy; env holds credential variable names, never values.
     mcp: dict | None = None
+    # Default-bounded harness capabilities.  Extra agent tooling and project
+    # Codex instructions are explicit opt-ins and are approval-hashed.
+    capabilities: dict = field(default_factory=lambda: {
+        "dsh": {"tools": [], "session": "action"},
+        "codex": {"agents_md": False, "skills": False},
+    })
     # Controller-owned execution controls, never accepted from policy.yaml.
     _deadline_epoch: float = 0
     _cancel_file: str = ""
@@ -44,7 +50,8 @@ class Policy:
         values = asdict(self)
         defaults = asdict(Policy())
         new = {"backend", "runtime", "model", "base_url", "max_turns",
-               "max_context_bytes", "max_completion_tokens", "read_mounts", "skills", "mcp"}
+               "max_context_bytes", "max_completion_tokens", "read_mounts", "skills", "mcp",
+               "capabilities"}
         # Keep v0.1 approvals valid when all new options retain their defaults.
         return digest({k: v for k, v in values.items() if not k.startswith("_")
                        and (k not in new or v != defaults[k])})
@@ -109,6 +116,23 @@ def load_policy(root: Path) -> Policy:
         raise LoopError("skills must be simple project skill directory names")
     if len(set(policy.skills)) != len(policy.skills):
         raise LoopError("duplicate skill entry")
+    if not isinstance(policy.capabilities, dict) or set(policy.capabilities) - {"dsh", "codex"}:
+        raise LoopError("capabilities must contain only dsh and codex")
+    dsh = policy.capabilities.get("dsh", {})
+    if not isinstance(dsh, dict) or set(dsh) - {"tools", "session"}:
+        raise LoopError("invalid dsh capabilities")
+    tools = dsh.get("tools", [])
+    if (not isinstance(tools, list)
+            or any(tool not in {"subagents", "workflow", "web", "jobs", "goals"} for tool in tools)
+            or len(set(tools)) != len(tools)):
+        raise LoopError("dsh capability tools must be a unique bounded allowlist")
+    session = dsh.get("session", "action")
+    if session != "action":
+        raise LoopError("only action-scoped DSH sessions are supported in this version")
+    codex = policy.capabilities.get("codex", {})
+    if (not isinstance(codex, dict) or set(codex) - {"agents_md", "skills"}
+            or any(type(codex.get(key, False)) is not bool for key in ("agents_md", "skills"))):
+        raise LoopError("invalid codex capabilities")
     if policy.mcp is not None:
         if not isinstance(policy.mcp, dict) or set(policy.mcp) != {"servers"}:
             raise LoopError("mcp must contain only a servers list")

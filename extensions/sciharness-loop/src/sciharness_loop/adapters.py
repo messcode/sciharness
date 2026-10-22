@@ -30,7 +30,14 @@ class CodexAdapter:
                 "--output-last-message", "/work/result.json"]
         if policy.model:
             args.extend(["--model", policy.model])
-        return Invocation("codex", "codex", tuple(args + ["-"]),
+        codex = (policy.capabilities or {}).get("codex", {})
+        wrapper = ["/opt/sciharness/codex_runner.py"]
+        if codex.get("agents_md"):
+            wrapper.append("--agents-md")
+        if codex.get("skills"):
+            wrapper.append("--skills")
+        wrapper.append("--")
+        return Invocation("codex", "python3", tuple(wrapper + args + ["-"]),
                           ("CODEX_HOME=/tmp/codex",), ("CODEX_API_KEY",))
 
 
@@ -60,6 +67,10 @@ class DshAdapter:
             args += ["--model", policy.model]
         if policy.base_url:
             args += ["--base-url", policy.base_url]
+        dsh = (policy.capabilities or {}).get("dsh", {})
+        allow_tools = dsh.get("tools", [])
+        if allow_tools:
+            args += ["--allow-tools", ",".join(allow_tools)]
         mcp_servers = (policy.mcp or {}).get("servers", [])
         if mcp_servers:
             args += ["--mcp-json", json.dumps(policy.mcp, sort_keys=True)]

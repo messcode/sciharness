@@ -14,6 +14,14 @@ if "HANG" in prompt:
     print(json.dumps({"type": "fixture_hanging"}), flush=True)
     time.sleep(60)
 runpy.run_path("/opt/sciharness/assert_isolation.py")
+expect = {}
+expect_path = Path("/input/project/fixture-expect.json")
+if expect_path.is_file():
+    expect = json.loads(expect_path.read_text(encoding="utf-8"))
+if expect.get("codex_agents_md"):
+    assert Path("/tmp/codex/AGENTS.md").is_file()
+if expect.get("codex_skills"):
+    assert Path("/tmp/codex/skills").is_dir()
 schema = json.loads(Path("/input/schema.json").read_text())
 context = json.loads(Path("/input/context.json").read_text())
 assert context["project"]["root"] == "/input/project"

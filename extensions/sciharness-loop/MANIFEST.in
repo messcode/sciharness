@@ -1,0 +1,2 @@
+include Dockerfile policy.example.yaml LICENSE
+recursive-include tests *.py Dockerfile

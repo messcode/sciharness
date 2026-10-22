@@ -195,6 +195,16 @@ CLI; the viewer never executes a generator, experiment, or migration.
 
 ## Non-goals
 
+These boundaries apply to Core. The separately packaged
+[`sciharness-loop`](../extensions/sciharness-loop/README.md) is an opt-in
+execution layer using public CLI/JSON contracts. Core never imports the
+extension, and its scientific objects, defaults, and validation semantics are
+unchanged. Loop execution provenance lives under `.sci/loop/`; accepted results
+use existing Exploration records and generated-output paths. Human approvals
+control single-step execution and result acceptance. Formal experiments,
+scientific decisions, STATE updates, and figure approval remain human-led Core
+workflows in this MVP.
+
 SciHarness intentionally does not provide:
 
 - a database, server, daemon, or workflow orchestrator;

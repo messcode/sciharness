@@ -199,8 +199,10 @@ def test_dsh_receives_read_only_project_skills(project, docker_image, monkeypatc
 
 
 def test_dsh_forwards_only_the_mcp_allowlist_patch(project, docker_image, monkeypatch):
+    (project / "fixture-expect.json").write_text('{"mcp": true}\n', encoding="utf-8")
     set_policy(project, image=docker_image, network="none", backend="dsh",
                model="fixture-model",
+               read_files=["fixture-expect.json", "docs/CHARTER.md", "docs/STATE.md"],
                mcp={"servers": [{
                    "name": "fixture",
                    "command": ["/opt/sciharness/mcp_fixture_server.py"],
@@ -208,7 +210,6 @@ def test_dsh_forwards_only_the_mcp_allowlist_patch(project, docker_image, monkey
                    "timeout_seconds": 5,
                }]})
     monkeypatch.setenv("DEEPSEEK_API_KEY", "unused-fixture-key")
-    monkeypatch.setenv("FIXTURE_EXPECT_MCP", "1")
     controller = Controller(project)
     controller._executor = DiagnosticExecutor(controller.policy, project)
     plan = controller.plan("MCP pilot")
@@ -217,11 +218,13 @@ def test_dsh_forwards_only_the_mcp_allowlist_patch(project, docker_image, monkey
 
 
 def test_dsh_capability_tool_groups_are_opt_in(project, docker_image, monkeypatch):
+    (project / "fixture-expect.json").write_text(
+        '{"dsh_tools": ["subagents", "web"]}\n', encoding="utf-8")
     set_policy(project, image=docker_image, network="none", backend="dsh",
                model="fixture-model",
+               read_files=["fixture-expect.json", "docs/CHARTER.md", "docs/STATE.md"],
                capabilities={"dsh": {"tools": ["subagents", "web"]}})
     monkeypatch.setenv("DEEPSEEK_API_KEY", "unused-fixture-key")
-    monkeypatch.setenv("FIXTURE_EXPECT_ALLOWED", "1")
     controller = Controller(project)
     controller._executor = DiagnosticExecutor(controller.policy, project)
     plan = controller.plan("Capability pilot")
@@ -231,6 +234,8 @@ def test_dsh_capability_tool_groups_are_opt_in(project, docker_image, monkeypatc
 
 def test_codex_capability_stages_agents_md_and_skills(project, docker_image, monkeypatch):
     (project / "AGENTS.md").write_text("Project repository guidance\n", encoding="utf-8")
+    (project / "fixture-expect.json").write_text(
+        '{"codex_agents_md": true, "codex_skills": true}\n', encoding="utf-8")
     folder = project / ".agents/skills/scientific-research"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "SKILL.md").write_text(
@@ -238,12 +243,10 @@ def test_codex_capability_stages_agents_md_and_skills(project, docker_image, mon
         encoding="utf-8")
     set_policy(project, image=docker_image, network="none", backend="codex",
                model="fixture-model",
-               read_files=["AGENTS.md", "docs/CHARTER.md", "docs/STATE.md"],
+               read_files=["fixture-expect.json", "AGENTS.md", "docs/CHARTER.md", "docs/STATE.md"],
                skills=["scientific-research"],
                capabilities={"codex": {"agents_md": True, "skills": True}})
     monkeypatch.setenv("CODEX_API_KEY", "unused-fixture-key")
-    monkeypatch.setenv("FIXTURE_EXPECT_AGENTS_MD", "1")
-    monkeypatch.setenv("FIXTURE_EXPECT_SKILLS", "1")
     controller = Controller(project)
     controller._executor = DiagnosticExecutor(controller.policy, project)
     plan = controller.plan("Codex capability pilot")

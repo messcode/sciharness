@@ -179,3 +179,19 @@ def test_container_symlink_escape_is_not_promoted(project, docker_image, monkeyp
     with pytest.raises(LoopError, match="non-regular"):
         controller.step(plan["id"], plan["review_hash"], "Reviewer")
     assert scientific_files(project) == before
+
+
+def test_dsh_receives_read_only_project_skills(project, docker_image, monkeypatch):
+    folder = project / ".agents/skills/scientific-research"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: scientific-research\ndescription: Fixture skill\n---\n",
+        encoding="utf-8")
+    set_policy(project, image=docker_image, network="none", backend="dsh",
+               model="fixture-model", skills=["scientific-research"])
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "unused-fixture-key")
+    controller = Controller(project)
+    controller._executor = DiagnosticExecutor(controller.policy, project)
+    plan = controller.plan("Skill pilot")
+    step = controller.step(plan["id"], plan["review_hash"], "Researcher")
+    assert step["state"] == "pending_review"

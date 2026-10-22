@@ -77,3 +77,14 @@ jobs:
         run: |
           docker run --rm --entrypoint dsh sciharness-dsh:test --version
           docker run --rm --entrypoint dsh sciharness-dsh:test --profile headless --help
+      - name: Verify the read-only skill provider patch composes
+        run: |
+          cat > /tmp/skill-patch.yml <<'EOF'
+          - id: skill-filesystem
+            config:
+              customSkillDirs:
+                - "/input/project/.agents/skills"
+          EOF
+          docker run --rm --entrypoint dsh -v /tmp/skill-patch.yml:/tmp/skill-patch.yml \
+            sciharness-dsh:test --profile headless --patch /tmp/skill-patch.yml --dump-config \
+            | grep -q customSkillDirs

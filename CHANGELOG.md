@@ -42,6 +42,9 @@ Optional human-controlled Research Loop.
   remains read-only.
 - Hardened mission preparation against crashes, ignored half-prepared mission
   directories, and rejected empty CLI mission IDs rather than dispatching.
+- Added read-only project Skill provisioning: selected `.agents/skills` bundles
+  are copied into the run input, included in input/review hashes, and exposed to
+  DSH through `skill-filesystem.customSkillDirs`.
 
 ## 0.8.0
 

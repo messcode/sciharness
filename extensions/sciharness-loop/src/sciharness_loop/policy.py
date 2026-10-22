@@ -16,6 +16,7 @@ class Policy:
     mode: str = "record_only"
     image: str = ""
     read_files: list = field(default_factory=lambda: ["docs/CHARTER.md", "docs/STATE.md"])
+    skills: list = field(default_factory=list)
     timeout_seconds: int = 600
     max_input_bytes: int = 256_000
     max_output_bytes: int = 10_000_000
@@ -40,7 +41,7 @@ class Policy:
         values = asdict(self)
         defaults = asdict(Policy())
         new = {"backend", "runtime", "model", "base_url", "max_turns",
-               "max_context_bytes", "max_completion_tokens", "read_mounts"}
+               "max_context_bytes", "max_completion_tokens", "read_mounts", "skills"}
         # Keep v0.1 approvals valid when all new options retain their defaults.
         return digest({k: v for k, v in values.items() if not k.startswith("_")
                        and (k not in new or v != defaults[k])})
@@ -98,6 +99,13 @@ def load_policy(root: Path) -> Policy:
         raise LoopError("base_url is a DeepSeek/DSH adapter option")
     if not isinstance(policy.read_mounts, dict):
         raise LoopError("read_mounts must map aliases to project data paths")
+    if not isinstance(policy.skills, list) or any(
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", name)
+            for name in policy.skills):
+        raise LoopError("skills must be simple project skill directory names")
+    if len(set(policy.skills)) != len(policy.skills):
+        raise LoopError("duplicate skill entry")
     dataset_mounts(root, policy)
     if policy.network not in ("bridge", "none"):
         raise LoopError("network must be bridge or none; host networking is forbidden")

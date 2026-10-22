@@ -48,7 +48,7 @@ def contract_note(input_dir, work_dir):
     )
 
 
-def patch_text(model):
+def patch_text(model, skills_dir=None):
     rows = []
     if model:
         rows.extend([
@@ -56,6 +56,13 @@ def patch_text(model):
             "  config:",
             "    provider: deepseek-official",
             "    model: " + json.dumps(model),
+        ])
+    if skills_dir:
+        rows.extend([
+            "- id: skill-filesystem",
+            "  config:",
+            "    customSkillDirs:",
+            "      - " + json.dumps(str(skills_dir)),
         ])
     for name in DISABLED_TOOLS:
         rows.extend(["- id: " + name, "  disabled: true"])
@@ -98,7 +105,9 @@ def run(args):
     work_dir = Path(os.environ.get("SCI_LOOP_WORK", "/work"))
     work_dir.mkdir(parents=True, exist_ok=True)
     patch = Path("/tmp/dsh-sci-loop-patch.yml")
-    patch.write_text(patch_text(args.model), encoding="utf-8")
+    skills_dir = input_dir / "project/.agents/skills"
+    patch.write_text(patch_text(args.model, skills_dir if skills_dir.is_dir() else None),
+                     encoding="utf-8")
 
     # The runtime mounts the container root read-only and provides only /tmp as
     # writable scratch.  DSH needs a writable home for sessions/storages, so copy

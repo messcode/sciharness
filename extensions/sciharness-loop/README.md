@@ -134,6 +134,21 @@ already produced under the recorded execution policy, so the current policy is
 not compared again. `record_only` remains read-only: use `step` (or
 `guarded_auto`) to accept results, then switch to `record_only` if desired.
 
+## Project Skills
+
+`skills: [scientific-research, scientific-figures]` selects named read-only
+bundles from `<project>/.agents/skills/`. The `sci` scaffold deploys the packaged
+Skills there. Selected bundles (including `references/`, `scripts/`, and
+`assets/`) are bounded by `max_input_bytes`/`max_files`, copied to
+`/input/project/.agents/skills/`, and included in the input/review hash. A skill
+change therefore invalidates a pending review; skills are instructions, not
+scientific evidence.
+
+DSH discovers them through a `skill-filesystem.customSkillDirs` patch and exposes
+them via its native `tool-skill`; Codex and the DeepSeek tool loop can read the
+same files through their normal file tools. Skills are read-only in the
+container and are never loaded from the host's user-level skill directories.
+
 ## Budgeted runs and overnight scheduling
 
 Set `mode: guarded_auto` explicitly. Create a run specification using
@@ -316,8 +331,9 @@ SCI_LOOP_TEST_DOCKER=1 python -m pytest -q extensions/sciharness-loop/tests/test
 
 Tests cover all three adapters against common controller contracts, the production
 DeepSeek tool loop over a local HTTP fixture, the DSH headless wrapper/profile
-patch, policy/input integrity, cumulative budgets, overnight/DST windows,
-interruption/reservations, review, and packaging. Mandatory CI Docker tests
+patch, project-Skill provisioning and review binding, policy/input integrity,
+cumulative budgets, overnight/DST windows, interruption/reservations, review, and
+packaging. Mandatory CI Docker tests
 exercise all three backends, read-only mounts, symlink rejection, a bounded cycle,
 and stopping a live container after controller death. A separate CI job builds
 `Dockerfile.dsh` and verifies `dsh --version` plus the initialized headless profile

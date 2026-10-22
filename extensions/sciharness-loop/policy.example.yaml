@@ -26,6 +26,10 @@ model: ''
 read_files:
   - docs/CHARTER.md
   - docs/STATE.md
+# Read-only Agent Skills deployed under <project>/.agents/skills/<name>.
+# Selected bundles are copied into the run input, included in input/review
+# hashes, and exposed to DSH through skill-filesystem.customSkillDirs.
+# skills: [scientific-research, scientific-figures]
 timeout_seconds: 600
 max_input_bytes: 256000
 max_output_bytes: 10000000

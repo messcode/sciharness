@@ -27,6 +27,8 @@ if os.environ.get("FIXTURE_EXPECT_MODEL"):
     assert "model: " + json.dumps(os.environ["FIXTURE_EXPECT_MODEL"]) in patch, patch
 if os.environ.get("FIXTURE_EXPECT_BASE_URL"):
     assert os.environ.get("DEEPSEEK_BASE_URL") == os.environ["FIXTURE_EXPECT_BASE_URL"], os.environ
+if Path("/input/project/.agents/skills").is_dir():
+    assert "- id: skill-filesystem" in patch and "customSkillDirs" in patch, patch
 
 print(json.dumps({"type": "session", "sessionId": "session-fixture"}), flush=True)
 codex = subprocess.Popen(["/usr/local/bin/codex"], stdin=subprocess.PIPE,

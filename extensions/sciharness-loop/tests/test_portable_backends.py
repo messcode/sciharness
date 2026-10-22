@@ -288,6 +288,9 @@ if os.environ.get("FAKE_DSH_ERROR") == "1":
     print(json.dumps({"type": "session", "sessionId": "session-fixture"}))
     print(json.dumps({"type": "error", "message": "boom"}))
     raise SystemExit(1)
+skills = Path(os.environ["SCI_LOOP_INPUT"]) / "project/.agents/skills"
+if skills.is_dir():
+    assert "- id: skill-filesystem" in patch and "customSkillDirs" in patch, patch
 schema = json.loads((Path(os.environ["SCI_LOOP_INPUT"]) / "schema.json").read_text())
 work = Path(os.environ["SCI_LOOP_WORK"])
 if "title" in schema["properties"]:
@@ -304,11 +307,17 @@ print(json.dumps({"type": "final", "text": json.dumps(result)}))
 '''
 
 
-def run_dsh_runner(tmp_path, *, write_result, error=False):
+def run_dsh_runner(tmp_path, *, write_result, error=False, skill=False):
     input_dir, work = tmp_path / "input", tmp_path / "work"
     input_dir.mkdir()
     work.mkdir()
     (input_dir / "schema.json").write_text(json.dumps(PLAN_SCHEMA))
+    if skill:
+        folder = input_dir / "project/.agents/skills/scientific-research"
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text(
+            "---\nname: scientific-research\ndescription: Fixture skill\n---\n",
+            encoding="utf-8")
     fake = tmp_path / "dsh"
     fake.write_text(FAKE_DSH, encoding="utf-8")
     fake.chmod(0o755)
@@ -347,3 +356,8 @@ def test_dsh_runner_reports_headless_errors(tmp_path):
     completed, _ = run_dsh_runner(tmp_path, write_result=False, error=True)
     assert completed.returncode == 1
     assert "boom" in completed.stderr
+
+
+def test_dsh_runner_exposes_skills_to_the_skill_provider(tmp_path):
+    completed, _ = run_dsh_runner(tmp_path, write_result=False, skill=True)
+    assert completed.returncode == 0, completed.stderr

@@ -7,4 +7,5 @@ RUN test -n "$CODEX_VERSION" \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --global "@openai/codex@${CODEX_VERSION}" \
     && npm cache clean --force
+COPY src/sciharness_loop/codex_runner.py /opt/sciharness/codex_runner.py
 ENTRYPOINT ["codex"]

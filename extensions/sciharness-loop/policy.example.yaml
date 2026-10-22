@@ -40,6 +40,15 @@ read_files:
 #       tools: [lookup]
 #       env: [MCP_TOKEN]
 #       timeout_seconds: 60
+# Default-bounded agent capabilities; opt in explicitly. Included in the
+# approval fingerprint. mission-scoped DSH sessions are not supported yet.
+# capabilities:
+#   dsh:
+#     tools: [subagents, workflow, web, jobs, goals]
+#     session: action
+#   codex:
+#     agents_md: true
+#     skills: true
 timeout_seconds: 600
 max_input_bytes: 256000
 max_output_bytes: 10000000

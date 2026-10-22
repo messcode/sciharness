@@ -33,6 +33,10 @@ if os.environ.get("FIXTURE_EXPECT_MCP") == "1":
     assert "- insert:" in patch and "dsh-mcp-client" in patch, patch
     assert "mcp-fixture" in patch and "toolCallTimeoutMs" in patch, patch
     assert Path("/tmp/mcp-fixture.json").is_file()
+if os.environ.get("FIXTURE_EXPECT_ALLOWED") == "1":
+    assert "- id: tool-subagent" not in patch, patch
+    assert "- id: tool-web" not in patch, patch
+    assert "- id: tool-jobs" in patch, patch
 
 print(json.dumps({"type": "session", "sessionId": "session-fixture"}), flush=True)
 codex = subprocess.Popen(["/usr/local/bin/codex"], stdin=subprocess.PIPE,

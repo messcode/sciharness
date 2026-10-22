@@ -190,6 +190,32 @@ mcp:
       timeout_seconds: 60
 ```
 
+## Capabilities (default bounded)
+
+Extra agent power is an explicit, approval-hashed opt-in, not a default:
+
+```yaml
+capabilities:
+  dsh:
+    tools: [subagents, workflow, web, jobs, goals]   # default []
+    session: action                                  # mission not yet supported
+  codex:
+    agents_md: true                                  # stage AGENTS.md into /work
+    skills: true                                     # stage .agents/skills into /work
+```
+
+- DSH tool groups map to its native `tool-subagent*`, `tool-workflow`,
+  `tool-web`, `tool-jobs`, and `tool-goal`. The default disables all of them.
+- Codex uses `codex_runner.py`: it copies only the reviewed `AGENTS.md` and
+  `.agents/skills` from `/input/project` into `/work` before exec'ing Codex. No
+  host Codex config, auth, MCP, or user skills are mounted.
+- The capability selection is part of `Policy.fingerprint`, so changing it
+  requires a new plan/mission approval.
+- Mission-scoped DSH sessions and Codex MCP staging are not implemented in this
+  version; both fail closed rather than silently using action-scoped behavior.
+- The Docker container remains the isolation boundary; enabling subagents/web/
+  jobs still consumes the same action timeout, budget, and review gate.
+
 ## Budgeted runs and overnight scheduling
 
 Set `mode: guarded_auto` explicitly. Create a run specification using
@@ -373,8 +399,9 @@ SCI_LOOP_TEST_DOCKER=1 python -m pytest -q extensions/sciharness-loop/tests/test
 Tests cover all three adapters against common controller contracts, the production
 DeepSeek tool loop over a local HTTP fixture, the DSH headless wrapper/profile
 patch, project-Skill provisioning and review binding, the default-off MCP
-allowlist/proxy and DSH patch, policy/input integrity, cumulative budgets,
-overnight/DST windows, interruption/reservations, review, and packaging. Mandatory CI Docker tests
+allowlist/proxy and DSH patch, opt-in DSH tool groups and Codex project staging,
+policy/input integrity, cumulative budgets, overnight/DST windows,
+interruption/reservations, review, and packaging. Mandatory CI Docker tests
 exercise all three backends, read-only mounts, symlink rejection, a bounded cycle,
 and stopping a live container after controller death. A separate CI job builds
 `Dockerfile.dsh` and verifies `dsh --version` plus the initialized headless profile

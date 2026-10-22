@@ -49,6 +49,9 @@ Optional human-controlled Research Loop.
   JSON-RPC proxy, credential-name-only environment injection, a separate
   `Dockerfile.dsh-mcp` image, and DSH MCP-client profile patches. MCP config is
   part of the policy approval hash; no host MCP configuration is used.
+- Added approval-hashed agent capabilities: opt-in DSH subagent/workflow/web/jobs/
+  goal tool groups and a Codex launcher that stages reviewed `AGENTS.md` and
+  project Skills into `/work`. Both default off; host config is never mounted.
 
 ## 0.8.0
 

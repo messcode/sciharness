@@ -52,6 +52,7 @@ def docker_image(tmp_path_factory):
     shutil.copytree(fixtures, build, dirs_exist_ok=True)
     shutil.copy2(Path(__file__).parents[1] / "src/sciharness_loop/deepseek_runner.py", build / "deepseek_runner.py")
     shutil.copy2(Path(__file__).parents[1] / "src/sciharness_loop/dsh_runner.py", build / "dsh_runner.py")
+    shutil.copy2(Path(__file__).parents[1] / "src/sciharness_loop/codex_runner.py", build / "codex_runner.py")
     tag = "sci-loop-test:local"
     subprocess.run([binary, "build", "-t", tag, str(build)], check=True, capture_output=True)
     return tag
@@ -211,5 +212,40 @@ def test_dsh_forwards_only_the_mcp_allowlist_patch(project, docker_image, monkey
     controller = Controller(project)
     controller._executor = DiagnosticExecutor(controller.policy, project)
     plan = controller.plan("MCP pilot")
+    step = controller.step(plan["id"], plan["review_hash"], "Researcher")
+    assert step["state"] == "pending_review"
+
+
+def test_dsh_capability_tool_groups_are_opt_in(project, docker_image, monkeypatch):
+    set_policy(project, image=docker_image, network="none", backend="dsh",
+               model="fixture-model",
+               capabilities={"dsh": {"tools": ["subagents", "web"]}})
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "unused-fixture-key")
+    monkeypatch.setenv("FIXTURE_EXPECT_ALLOWED", "1")
+    controller = Controller(project)
+    controller._executor = DiagnosticExecutor(controller.policy, project)
+    plan = controller.plan("Capability pilot")
+    step = controller.step(plan["id"], plan["review_hash"], "Researcher")
+    assert step["state"] == "pending_review"
+
+
+def test_codex_capability_stages_agents_md_and_skills(project, docker_image, monkeypatch):
+    (project / "AGENTS.md").write_text("Project repository guidance\n", encoding="utf-8")
+    folder = project / ".agents/skills/scientific-research"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: scientific-research\ndescription: Fixture skill\n---\n",
+        encoding="utf-8")
+    set_policy(project, image=docker_image, network="none", backend="codex",
+               model="fixture-model",
+               read_files=["AGENTS.md", "docs/CHARTER.md", "docs/STATE.md"],
+               skills=["scientific-research"],
+               capabilities={"codex": {"agents_md": True, "skills": True}})
+    monkeypatch.setenv("CODEX_API_KEY", "unused-fixture-key")
+    monkeypatch.setenv("FIXTURE_EXPECT_AGENTS_MD", "1")
+    monkeypatch.setenv("FIXTURE_EXPECT_SKILLS", "1")
+    controller = Controller(project)
+    controller._executor = DiagnosticExecutor(controller.policy, project)
+    plan = controller.plan("Codex capability pilot")
     step = controller.step(plan["id"], plan["review_hash"], "Researcher")
     assert step["state"] == "pending_review"

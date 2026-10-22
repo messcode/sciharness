@@ -80,6 +80,17 @@ class DockerRuntime:
             raise LoopError("execution deadline reached before launch")
         return maximum
 
+    def resolve_image(self, policy, timeout=30):
+        """Return the immutable local image ID for the policy image/tag."""
+        if not policy.image:
+            raise LoopError("policy.image must name a trusted, locally built harness image")
+        inspected = subprocess.run(
+            self.docker + ["image", "inspect", "--format", "{{.Id}}", policy.image],
+            capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+        if inspected.returncode or not inspected.stdout.strip().startswith("sha256:"):
+            raise LoopError("trusted harness image is not available locally")
+        return inspected.stdout.strip()
+
     def arm_watchdog(self, run_id, container_id, log, policy):
         """A separate supervisor still stops the container if the controller dies."""
         ready, cancel = log.with_name("watchdog-ready.json"), log.with_name("watchdog-cancel")
@@ -99,6 +110,8 @@ class DockerRuntime:
             if process.poll() is not None or time.monotonic() >= until:
                 raise LoopError("deadline watchdog failed to arm; harness was not started")
             time.sleep(0.02)
+        if process.poll() is not None:
+            raise LoopError("deadline watchdog exited after arming; harness was not started")
         self.remaining(policy, 1)
 
     def wait_process(self, process, prompt, policy):
@@ -159,14 +172,8 @@ class DockerRuntime:
         # itself receives only the explicit --env values below.
         env = {"PATH": os.environ.get("PATH", ""), **{key: os.environ[key] for key in invocation.credentials}}
         command = self.command(run_id, inputs, work, policy, invocation)
-        inspected = subprocess.run(self.docker + ["image", "inspect", "--format", "{{.Id}}",
-                                                 policy.image],
-                                   capture_output=True, text=True, encoding="utf-8",
-                                   timeout=self.remaining(policy, 30))
-        if inspected.returncode or not inspected.stdout.strip().startswith("sha256:"):
-            raise LoopError("trusted harness image is not available locally")
         # Execute the exact inspected image, even if its mutable tag moves later.
-        image_id = inspected.stdout.strip()
+        image_id = self.resolve_image(policy, self.remaining(policy, 30))
         command[command.index("--entrypoint") + 2] = image_id
         metadata = {
             "backend": "docker-" + invocation.backend, "image": image_id, "command": command,

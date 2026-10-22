@@ -129,6 +129,26 @@ def test_changed_policy_requires_new_plan(enabled, executor):
         Controller(enabled, executor).step(plan["id"], plan["review_hash"], "Me")
 
 
+def test_completed_result_can_be_accepted_after_guarded_auto_is_disabled(enabled, executor):
+    set_policy(enabled, mode="guarded_auto")
+    controller = Controller(enabled, executor)
+    _, step = plan_and_step(controller)
+    assert step["state"] == "pending_review"
+    # The normal safety action after an autonomous run: switch back to manual
+    # mode before reviewing. Acceptance reviews already-produced evidence.
+    set_policy(enabled, mode="step")
+    accepted = Controller(enabled, executor).accept(step["id"], step["review_hash"], "Reviewer")
+    assert accepted["state"] == "accepted"
+
+
+def test_accept_requires_a_write_capable_mode(enabled, executor):
+    controller = Controller(enabled, executor)
+    _, step = plan_and_step(controller)
+    set_policy(enabled, mode="record_only")
+    with pytest.raises(LoopError, match="record_only"):
+        Controller(enabled, executor).accept(step["id"], step["review_hash"], "Reviewer")
+
+
 def test_changed_artifacts_reject_stale_review(enabled, executor):
     controller = Controller(enabled, executor)
     _, step = plan_and_step(controller)

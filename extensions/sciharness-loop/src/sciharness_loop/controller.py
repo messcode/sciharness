@@ -299,7 +299,15 @@ class Controller:
                 if path.is_symlink():
                     raise LoopError("symlinked mission state")
                 if path.is_dir() and is_run_id(path.name) and path.name != ignore_mission:
-                    value = read_json(safe_path(path, "checkpoint.json"))
+                    checkpoint = safe_path(path, "checkpoint.json")
+                    if not checkpoint.is_file():
+                        # A crash during mission preparation can leave an
+                        # id-named directory before the checkpoint exists. It is
+                        # not a mission and must not block new work.
+                        continue
+                    value = read_json(checkpoint)
+                    if not isinstance(value, dict):
+                        raise LoopError("corrupt mission checkpoint: " + path.name)
                     if value.get("state") in ("running", "recovery_required"):
                         raise LoopError("recover unfinished mission before new work: " + path.name)
 
@@ -369,7 +377,11 @@ class Controller:
             value = self.load(run_id)
             if value["kind"] != "step" or value["state"] not in ("pending_review", "applying", "accepted"):
                 raise LoopError("only a completed, reviewable step can be accepted")
-            self.check_policy(value)
+            # Acceptance is a fresh human review of evidence already produced
+            # under the recorded policy. The current policy may legitimately be
+            # switched (guarded_auto -> step) to stop further autonomous work;
+            # that must not strand a completed result. Plan execution still
+            # checks the policy before running.
             approval = self.approval(value, review_hash, by)
             self.verify_work(value)
             if value["state"] == "accepted":

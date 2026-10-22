@@ -53,19 +53,23 @@ def main(argv=None):
         controller = Controller(root)
         if args.command == "run":
             runner = MissionRunner(root)
-            if not (args.start or args.resume) and (args.review_hash or args.by):
+            if (args.start is None and args.resume is None
+                    and (args.review_hash is not None or args.by is not None)):
                 raise LoopError("approval options apply only to --start/--resume")
-            if args.spec:
+            if args.spec is not None:
                 result = runner.prepare(args.spec)
-            elif args.start or args.resume:
-                result = runner.approve(args.start or args.resume, args.review_hash, args.by,
-                                        resume=bool(args.resume))
-            elif args.pause:
+            elif args.start is not None or args.resume is not None:
+                resuming = args.resume is not None
+                mission_id = args.resume if resuming else args.start
+                result = runner.approve(mission_id, args.review_hash, args.by, resume=resuming)
+            elif args.pause is not None:
                 result = runner.pause(args.pause)
-            elif args.recover:
+            elif args.recover is not None:
                 result = runner.recover(args.recover)
-            else:
+            elif args.dispatch:
                 result = runner.dispatch()
+            else:
+                raise LoopError("choose exactly one run action")
         elif args.command == "plan":
             result = controller.plan(args.task)
         elif args.command == "status":

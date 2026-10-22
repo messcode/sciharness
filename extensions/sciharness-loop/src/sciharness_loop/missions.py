@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from .controller import Controller, PLAN_SCHEMA, now
+from .controller import Controller, PLAN_SCHEMA, RESULT_SCHEMA, now
 from .storage import (
     LoopError, digest, is_run_id, lock, read_json, run_path, safe_path, write_json, write_text,
 )
@@ -51,6 +51,8 @@ def timestamp(value, timezone="UTC"):
 
 
 def load_spec(path: Path) -> RunSpec:
+    if not path.is_file():
+        raise LoopError("run specification not found: " + str(path))
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
@@ -118,13 +120,29 @@ class MissionRunner:
                 or value.get("id") != mission_id or not isinstance(value.get("spec"), dict)
                 or not isinstance(value.get("cycles"), list)):
             raise LoopError("corrupt mission checkpoint")
+        spec = value["spec"]
         if (value.get("state") not in ("prepared", "scheduled", "running", "paused", "completed",
                                        "failed", "needs_approval", "recovery_required")
                 or type(value.get("spent_seconds")) not in (int, float)
                 or not math.isfinite(value["spent_seconds"]) or value["spent_seconds"] < 0
-                or any(not isinstance(value.get(k), str) for k in
-                       ("review_hash", "policy_hash", "input_hash", "selected_input_hash"))):
-            raise LoopError("corrupt mission state or budget")
+                or any(not isinstance(value.get(k), str) or not value[k] for k in
+                       ("created", "updated", "review_hash", "policy_hash", "input_hash",
+                        "selected_input_hash"))
+                or not isinstance(spec.get("objective"), str) or not spec["objective"].strip()
+                or type(spec.get("runtime_seconds")) is not int
+                or type(spec.get("max_cycles")) is not int
+                or type(spec.get("stop_margin_seconds")) is not int
+                or not isinstance(spec.get("constraints"), list)
+                or not isinstance(spec.get("timezone"), str)
+                or any(spec.get(k) is not None and not isinstance(spec[k], str)
+                       for k in ("start_at", "end_at"))
+                or ("approved_image_id" in value
+                    and not isinstance(value["approved_image_id"], str))
+                or ("approvals" in value and not isinstance(value["approvals"], list))):
+            raise LoopError("corrupt mission state, spec, or budget")
+        if any(not isinstance(cycle, dict) or "number" not in cycle or "state" not in cycle
+               for cycle in value["cycles"]):
+            raise LoopError("corrupt mission cycle list")
         return value
 
     def status(self, mission_id=None):
@@ -139,6 +157,11 @@ class MissionRunner:
             if path.is_symlink():
                 raise LoopError("symlinked mission state")
             if path.is_dir() and is_run_id(path.name):
+                # A crash before the checkpoint used to leave an unusable
+                # half-prepared directory; it is not a mission and must not
+                # block status or new work.
+                if not (path / "checkpoint.json").is_file():
+                    continue
                 value = self.status(path.name)
                 result.append({k: value[k] for k in ("id", "state", "created", "updated",
                                                     "spent_seconds", "stop_reason", "pause_requested")})
@@ -160,6 +183,8 @@ class MissionRunner:
                 "Consumed/reserved runtime: {:.3f} / {} seconds.".format(
                     value["spent_seconds"], value["spec"]["runtime_seconds"]), "",
                 "Results and agent-reported checks require human scientific review.", ""]
+        if value.get("approved_image_id"):
+            rows[-1:-1] = ["", "Approved harness image: `{}`.".format(value["approved_image_id"]), ""]
         for cycle in value["cycles"]:
             rows.extend(["## Cycle {} — {}".format(cycle["number"], cycle["state"]), ""])
             for kind in ("plan", "step"):
@@ -184,13 +209,6 @@ class MissionRunner:
             self.controller.require_idle()
             snapshot = self.controller.snapshot()
             mission_id = uuid.uuid4().hex
-            folder = self.path(mission_id)
-            (folder / "input").mkdir(parents=True)
-            write_json(folder / "input/context.json", snapshot[0])
-            for relative, content in snapshot[1].items():
-                path = safe_path(folder / "input/project", relative)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(content)
             spec_data = asdict(spec)
             value = {"schema_version": 1, "id": mission_id, "created": now(),
                      "state": "prepared", "spec": spec_data, "cycles": [], "spent_seconds": 0,
@@ -198,7 +216,18 @@ class MissionRunner:
                      "input_hash": snapshot[2], "selected_input_hash": snapshot[3],
                      "review_hash": digest({"spec": spec_data, "inputs": snapshot[2],
                                             "policy": self.controller.policy.fingerprint})}
-            return self.save(value)
+            # Journal the mission before copying input. A crash during the copy
+            # then leaves a valid, non-blocking prepared mission rather than an
+            # unreadable directory that blocks every later command.
+            value = self.save(value)
+            folder = self.path(mission_id)
+            (folder / "input").mkdir(parents=True)
+            write_json(folder / "input/context.json", snapshot[0])
+            for relative, content in snapshot[1].items():
+                path = safe_path(folder / "input/project", relative)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            return value
 
     def check(self, value):
         try:
@@ -222,11 +251,16 @@ class MissionRunner:
                 raise LoopError("mission is not ready for " + ("resumption" if resume else "approval"))
             self.check(value)
             approval = self.controller.approval(value, review_hash, by)
+            image_id = self.controller.executor.resolve_image(self.controller.policy)
+            previous_image = value.get("approved_image_id")
+            if previous_image and previous_image != image_id:
+                raise ApprovalChanged("approved harness image changed; prepare a new run")
             spec = value["spec"]
             if spec["end_at"] and self.clock() >= timestamp(spec["end_at"]):
                 raise LoopError("execution window already ended; prepare a new run")
             (self.path(mission_id) / "pause-request").unlink(missing_ok=True)
             value.setdefault("approvals", []).append(approval)
+            value["approved_image_id"] = image_id
             self.save(value, "scheduled", stop_reason=None)
         if not spec["start_at"] or self.clock() >= timestamp(spec["start_at"]):
             return self.run(mission_id)
@@ -267,22 +301,30 @@ class MissionRunner:
 
     def dispatch(self):
         self.require_mode()
-        completed = []
-        for row in self.status():
+        completed, errors = [], []
+        try:
+            rows = self.status()
+        except LoopError as exc:
+            return {"dispatched": [], "errors": [{"id": None, "error": str(exc)}]}
+        for row in rows:
             if row["state"] != "scheduled":
                 continue
-            value = self.load(row["id"])
-            start = value["spec"]["start_at"]
-            if not start or self.clock() >= timestamp(start):
-                completed.append(self.run(value["id"]))
-        return {"dispatched": completed}
+            try:
+                value = self.load(row["id"])
+                start = value["spec"]["start_at"]
+                if not start or self.clock() >= timestamp(start):
+                    completed.append(self.run(value["id"]))
+            except (Exception, KeyboardInterrupt) as exc:
+                errors.append({"id": row["id"], "error": str(exc) or "interrupted"})
+        return {"dispatched": completed, "errors": errors}
 
-    def history_inputs(self, value, snapshot):
+    def history_inputs(self, value, snapshot, reserve_bytes=12000):
         history, extra = [], {}
         # Select whole files from at most three prior cycles; raw evidence is
         # retained even when omitted from the next model's bounded context.
         available = max(0, self.controller.policy.max_input_bytes -
-                        sum(len(v) for v in snapshot[1].values()) - len(json.dumps(snapshot[0])) - 12000)
+                        sum(len(v) for v in snapshot[1].values()) -
+                        len(json.dumps(snapshot[0])) - reserve_bytes)
         for cycle in value["cycles"][-4:-1]:
             for kind in ("plan", "step"):
                 if kind not in cycle:
@@ -316,9 +358,14 @@ class MissionRunner:
         allowance = min(self.controller.policy.timeout_seconds, remaining, deadline - self.clock())
         if allowance <= 0:
             raise LoopError("execution budget exhausted before action")
+        image_id = value.get("approved_image_id")
+        if not image_id:
+            raise LoopError("mission has no approved harness image")
+        schema = MISSION_PLAN_SCHEMA if kind == "plan" else RESULT_SCHEMA
+        reserve = len(task.encode()) + len(json.dumps(schema).encode()) + 32000
         child = self.controller.new_run(
             kind, task, snapshot, schema=MISSION_PLAN_SCHEMA if kind == "plan" else None,
-            additional_inputs=self.history_inputs(value, snapshot),
+            additional_inputs=self.history_inputs(value, snapshot, reserve),
             mission=value["id"], cycle=cycle["number"],
             **({"plan": plan, "title": title, "execution_approval": value["approvals"][-1]}
                if kind == "step" else {}))
@@ -327,6 +374,7 @@ class MissionRunner:
         self.save(value, active=child["id"], reservation=allowance)
         started = self.monotonic()
         execution_policy = replace(self.controller.policy, timeout_seconds=allowance,
+                                   image=image_id,
                                    _deadline_epoch=min(deadline, self.clock() + allowance),
                                    _cancel_file=str(self.path(value["id"]) / "pause-request"))
         try:
@@ -354,6 +402,12 @@ class MissionRunner:
                 self.check(value)
             except LoopError as exc:
                 return self.save(value, "needs_approval", stop_reason=str(exc))
+            image_id = self.controller.executor.resolve_image(self.controller.policy)
+            approved_image = value.get("approved_image_id")
+            if approved_image and approved_image != image_id:
+                return self.save(value, "needs_approval",
+                                 stop_reason="approved harness image changed; prepare a new run")
+            value["approved_image_id"] = image_id
             deadline = (timestamp(spec["end_at"]) if spec["end_at"] else
                         self.clock() + max(0, spec["runtime_seconds"] - value["spent_seconds"]))
             self.save(value, "running", deadline_epoch=deadline, stop_reason=None)

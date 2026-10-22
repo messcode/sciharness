@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+from pathlib import Path
 
 import pytest
 import yaml
@@ -26,10 +27,15 @@ class ScriptedExecutor(FakeExecutor):
         super().__init__()
         self.clock, self.seconds, self.callback = clock, seconds, callback
         self.actions = list(actions or ["explore"] * 100)
-        self.limits, self.histories = [], []
+        self.limits, self.histories, self.images = [], [], []
+        self.image = "sha256:" + "c" * 64
+
+    def resolve_image(self, policy):
+        return self.image
 
     def execute(self, run_id, inputs, work, log, policy):
         self.limits.append((policy.timeout_seconds, policy._deadline_epoch))
+        self.images.append(policy.image)
         history = inputs / "history.json"
         if history.exists():
             self.histories.append(json.loads(history.read_text()))
@@ -147,11 +153,11 @@ def test_future_overnight_window_dispatches_only_when_due_once(project, tmp_path
     instance = runner(project, clock)
     value = approve(instance, instance.prepare(path))
     assert value["state"] == "scheduled" and not instance.controller.executor.calls
-    assert instance.dispatch() == {"dispatched": []}
+    assert instance.dispatch()["dispatched"] == []
     clock.value = timestamp("2030-01-01T18:00:00", "Asia/Shanghai")
     result = instance.dispatch()["dispatched"][0]
     assert result["state"] == "completed"
-    assert instance.dispatch() == {"dispatched": []}
+    assert instance.dispatch()["dispatched"] == []
     assert len(instance.controller.executor.calls) == 6
 
 
@@ -344,3 +350,86 @@ def test_existing_policy_fingerprint_is_preserved():
               "timeout_seconds": 600, "max_input_bytes": 256000, "max_output_bytes": 10000000,
               "max_files": 100, "memory_mb": 2048, "cpus": 2, "network": "bridge"}
     assert Policy(**legacy).fingerprint == digest(legacy)
+
+
+def test_prepare_crash_leaves_a_recoverable_prepared_mission(project, tmp_path, monkeypatch):
+    clock = Clock()
+    path = configure(project, tmp_path)
+    instance = runner(project, clock)
+
+    def fail_copy(self, data):
+        raise OSError("input copy interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "write_bytes", fail_copy)
+        with pytest.raises(OSError, match="interrupted"):
+            instance.prepare(path)
+    missions = instance.status()
+    assert len(missions) == 1 and missions[0]["state"] == "prepared"
+    # A prepared mission does not block new work; one of its input files may be
+    # missing, so re-approval may still need a fresh run, but the Loop is usable.
+    assert instance.controller.plan("another pilot")["state"] == "suggested"
+    second = instance.prepare(path)
+    assert second["state"] == "prepared"
+    assert len(instance.status()) == 2
+
+
+def test_half_prepared_mission_directory_is_ignored(project):
+    clock = Clock()
+    set_policy(project, mode="guarded_auto")
+    half = project / ".sci/loop/missions" / ("a" * 32)
+    (half / "input").mkdir(parents=True)
+    instance = runner(project, clock)
+    assert instance.status() == []
+    instance.controller.require_idle()
+    assert instance.controller.plan("new work")["state"] == "suggested"
+
+
+def test_empty_run_option_never_falls_through_to_dispatch(project, tmp_path):
+    clock = Clock()
+    path = configure(project, tmp_path, start_at="2030-01-02T18:00:00Z",
+                     end_at="2030-01-03T08:00:00Z")
+    instance = runner(project, clock)
+    value = approve(instance, instance.prepare(path))
+    assert value["state"] == "scheduled"
+    assert main(["run", "--pause", "", "--path", str(project), "--json"]) == 1
+    assert instance.status(value["id"])["state"] == "scheduled"
+
+
+def test_scheduled_mission_rejects_a_changed_resolved_image(project, tmp_path):
+    clock = Clock()
+    path = configure(project, tmp_path, start_at="2030-01-02T18:00:00Z",
+                     end_at="2030-01-03T08:00:00Z")
+    executor = ScriptedExecutor(clock)
+    executor.image = "sha256:" + "a" * 64
+    instance = runner(project, clock, executor)
+    value = approve(instance, instance.prepare(path))
+    assert value["approved_image_id"] == executor.image
+    executor.image = "sha256:" + "b" * 64
+    clock.value = timestamp("2030-01-03T00:00:00Z")
+    completed = instance.dispatch()["dispatched"][0]
+    assert completed["state"] == "needs_approval"
+    assert "image" in completed["stop_reason"]
+    assert not executor.calls
+
+
+def test_dispatch_reports_one_failure_and_continues(project, tmp_path):
+    clock = Clock()
+    path = configure(project, tmp_path, start_at="2030-01-02T18:00:00Z",
+                     end_at="2030-01-03T08:00:00Z")
+    instance = runner(project, clock)
+    first = approve(instance, instance.prepare(path))
+    second = approve(instance, instance.prepare(path))
+    clock.value = timestamp("2030-01-03T00:00:00Z")
+    original = instance.run
+
+    def run(mission_id):
+        if mission_id == first["id"]:
+            raise LoopError("synthetic dispatch failure")
+        return original(mission_id)
+
+    instance.run = run
+    result = instance.dispatch()
+    assert result["errors"] and result["errors"][0]["id"] == first["id"]
+    assert len(result["dispatched"]) == 1
+    assert result["dispatched"][0]["id"] == second["id"]

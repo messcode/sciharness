@@ -90,6 +90,12 @@ automatic mutation capability. Approval identities are operator-provided audit
 annotations, not authenticated signatures. Structural validation does not
 establish scientific validity.
 
+A completed result can be accepted after switching `guarded_auto` back to `step`
+(the normal safety action after an autonomous run). Acceptance reviews evidence
+already produced under the recorded execution policy, so the current policy is
+not compared again. `record_only` remains read-only: use `step` (or
+`guarded_auto`) to accept results, then switch to `record_only` if desired.
+
 ## Budgeted runs and overnight scheduling
 
 Set `mode: guarded_auto` explicitly. Create a run specification using
@@ -137,22 +143,27 @@ The worker must have Docker and the selected provider credential available in
 its environment. SciHarness does not install cron jobs, services, or ChatGPT
 reminders. Dispatch executes only due, previously approved runs; an expired
 window launches no model. Multiple dispatchers cannot acquire the project lock
-concurrently, and completed runs are not replayed.
+concurrently, and completed runs are not replayed. Dispatch continues past a
+failed mission and reports it under `errors`, so later due missions are still
+attempted.
 
 Each cycle creates a fresh bounded plan, then executes one exploratory action.
-The planner can stop or request additional approval. It sees selected, immutable
-project inputs plus bounded excerpts/whole artifacts from up to three prior
-cycles; omitted evidence remains on disk. Results stay staged for review, not
-automatically accepted. This version authorizes adaptive diagnostics and pilot
-computations; starting/changing formal experiments and scientific conclusions
-remains a human-led Core workflow.
+The planner can stop or request additional approval. A `needs_approval` plan ends
+the mission; prepare a new run with the revised objective/constraints (it cannot
+be resumed). The planner sees selected, immutable project inputs plus bounded
+excerpts/whole artifacts from up to three prior cycles; omitted evidence remains
+on disk. Results stay staged for review, not automatically accepted. This version
+authorizes adaptive diagnostics and pilot computations; starting/changing formal
+experiments and scientific conclusions remains a human-led Core workflow.
 
-`runtime_seconds` is cumulative action/setup wall time, including planning and
+`runtime_seconds` is cumulative action/runtime wall time, including planning and
 cleanup, not CPU/GPU hours or time spent waiting for a scheduled start/pause.
-Every action receives the minimum of its per-action timeout, remaining run
-budget, and absolute window time. Stop margins prevent new actions near either
-boundary. Time/cycle limits, exhausted scope, failures, or a pause request stop
-the loop. There is no token/spend cap; provider usage is logged when available.
+Mission preparation/input copying and report generation happen outside the
+action timer and are not charged. Every action receives the minimum of its
+per-action timeout, remaining run budget, and absolute window time. Stop margins
+prevent new actions near either boundary. Time/cycle limits, exhausted scope,
+failures, or a pause request stop the loop. There is no token/spend cap; provider
+usage is logged when available.
 
 A per-action runtime reservation is saved **before** execution. If a controller
 crashes, the unconfirmed reservation remains charged; resuming never resets the
@@ -161,11 +172,19 @@ is armed before the container starts. It survives controller death and removes
 the container at its deadline. Docker/host failure still requires recovery;
 the supervisor cannot enforce a deadline while the machine or daemon is down.
 
+Approval also resolves the policy image tag to an immutable image ID and records
+`approved_image_id`. Dispatch resolves it again; if the tag now points to a
+different image, the mission becomes `needs_approval` instead of running. Pin an
+image digest in the policy when a scheduled approval must be stable across
+rebuilds.
+
 The preliminary morning report is `.sci/loop/missions/<id>/report.md`. It lists
 completed/failed actions, stop reason, consumed/reserved budget, evidence paths,
-and agent-reported findings. Review individual step outputs with the usual
-`step --accept` command. Results from the same mission can be accepted in
-sequence; unrelated project/context changes still invalidate approval.
+and agent-reported findings. It is a snapshot written on mission state changes,
+not refreshed when a step is later accepted. Review individual step outputs with
+the usual `step --accept` command; switching `guarded_auto` to `step` first is
+supported. Results from the same mission can be accepted in sequence; unrelated
+project/context changes still invalidate approval.
 
 ## Pause, recovery, and resumption
 
@@ -179,8 +198,8 @@ Pause signals are outside the agent container and are observed during active
 execution. Recovery confirms orphaned actions are stopped, retains partial
 files and reservations, and pauses the mission. Resumption requires another
 explicit approval of the unchanged scope and its remaining budget. A changed
-policy/input/context or an expired window requires a new run. Pending scientific
-approval is not silently bypassed by resuming.
+policy/input/context, an expired window, or a changed resolved image requires a
+new run. Pending scientific approval is not silently bypassed by resuming.
 
 The original single-action recovery remains available:
 
@@ -237,7 +256,10 @@ The controller selects a `HarnessAdapter` and `ExecutionRuntime`. Adapters own
 commands, model options, and credential names. Runtimes own containment, read-only
 mounts, stop, deadlines, and resource enforcement. Codex uses its CLI; DeepSeek
 uses the bundled text-file/shell tool loop through the documented Chat Completions
-protocol. Both produce the same result schemas and use the same review gates.
+protocol. The DeepSeek adapter is a direct API tool loop, not the DSH harness; a
+DSH integration would be a separate `HarnessAdapter` (the controller/runtime
+boundary is reusable). Both supplied adapters produce the same result schemas and
+use the same review gates.
 The `CodexExecutor` facade remains for existing integrations. Default v0.1
 policy fingerprints remain valid when new options retain their defaults.
 

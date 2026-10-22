@@ -161,6 +161,7 @@ def test_insufficient_runtime_capabilities_are_rejected():
 @pytest.mark.parametrize("options", [
     {"backend": "unknown"}, {"runtime": "shell"}, {"backend": "deepseek"},
     {"base_url": "http://remote.example"}, {"base_url": "https://user:password@example.com"},
+    {"base_url": "https://[::1"},
     {"_deadline_epoch": 1}, {"max_turns": False}, {"read_mounts": {"all": "."}},
     {"read_mounts": {"control": ".sci/loop"}}, {"read_mounts": {"../escape": "data/subset"}},
 ])

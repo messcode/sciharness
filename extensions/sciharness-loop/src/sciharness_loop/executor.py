@@ -15,12 +15,17 @@ class Executor(Protocol):
 
     def stop(self, run_id): ...
 
+    def resolve_image(self, policy): ...
+
 
 class HarnessExecutor:
     def __init__(self, adapter, runtime, root=None):
         if not REQUIRED_CAPABILITIES <= runtime.capabilities:
             raise LoopError("runtime cannot enforce required isolation/stop/deadline capabilities")
         self.adapter, self.runtime, self.root = adapter, runtime, root
+
+    def resolve_image(self, policy):
+        return self.runtime.resolve_image(policy)
 
     def execute(self, run_id, inputs, work, log, policy):
         if policy.read_mounts and self.root is None:

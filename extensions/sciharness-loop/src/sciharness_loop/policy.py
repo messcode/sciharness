@@ -84,10 +84,15 @@ def load_policy(root: Path) -> Policy:
     if policy.backend == "deepseek" and not policy.model.strip():
         raise LoopError("DeepSeek requires an explicitly selected model")
     if policy.base_url:
-        url = urlsplit(policy.base_url)
-        if (url.scheme not in ("https", "http") or not url.hostname or url.username
-                or url.password or url.query or url.fragment or (url.scheme == "http"
-                and url.hostname not in ("localhost", "127.0.0.1", "::1"))):
+        try:
+            url = urlsplit(policy.base_url)
+            invalid = (url.scheme not in ("https", "http") or not url.hostname
+                       or url.username or url.password or url.query or url.fragment
+                       or (url.scheme == "http"
+                           and url.hostname not in ("localhost", "127.0.0.1", "::1")))
+        except ValueError as exc:
+            raise LoopError("invalid base_url") from exc
+        if invalid:
             raise LoopError("base_url must use HTTPS (HTTP allowed only for loopback testing)")
     if policy.backend == "codex" and policy.base_url:
         raise LoopError("base_url is a DeepSeek adapter option")

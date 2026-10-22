@@ -4,8 +4,16 @@ import json
 import os
 import sys
 from pathlib import Path
+import time
+import runpy
+
+print(json.dumps({"type": "fixture_started"}), flush=True)
 
 prompt = sys.stdin.read()
+if "HANG" in prompt:
+    print(json.dumps({"type": "fixture_hanging"}), flush=True)
+    time.sleep(60)
+runpy.run_path("/opt/sciharness/assert_isolation.py")
 schema = json.loads(Path("/input/schema.json").read_text())
 context = json.loads(Path("/input/context.json").read_text())
 assert context["project"]["root"] == "/input/project"
@@ -33,6 +41,8 @@ else:
 if "title" in schema["properties"]:
     result = {"title": "Isolated pilot", "task": "SYMLINK" if "SYMLINK" in prompt else "pilot",
               "rationale": "Exercise the isolated executor"}
+    if "action" in schema["properties"]:
+        result["action"] = "explore"
 else:
     Path("/work/proposal.md").write_text("Container fixture; no scientific conclusion.")
     Path("/work/artifacts").mkdir()

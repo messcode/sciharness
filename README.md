@@ -151,14 +151,15 @@ scaffold.
 - [Manuscript figures](docs/FIGURES.md)
 - [Web viewer](docs/WEB.md)
 - [Changelog](CHANGELOG.md)
-- [Optional human-controlled Research Loop](extensions/sciharness-loop/README.md)
+- [Optional portable Research Loop](extensions/sciharness-loop/README.md)
 
 The generated project also contains `docs/guides/FIGURES.md`, `AGENTS.md`, and
 the `scientific-research` / `scientific-figures` Skills under `.agents/skills/`.
 
 Research execution is available as the separately installed `sciharness-loop`
-extension. It provides explicit `plan`, `step`, and `status` commands with
-isolated Codex execution and human review. Installing or using Core alone keeps
+extension. It provides `plan`, `step`, `status`, and approved budgeted `run`
+commands, with Codex/DeepSeek adapters, Docker isolation, scheduled execution
+windows, and human result review. Installing or using Core alone keeps
 the original record-only workflow; no Loop policy, agent runtime, or project
 migration is required. See the extension documentation for opt-in and limits.
 

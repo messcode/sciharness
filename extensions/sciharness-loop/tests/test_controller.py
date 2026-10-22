@@ -418,7 +418,7 @@ def test_id_allocation_uses_existing_core_ledger(enabled, executor):
 
 def test_cli_error_is_json_and_status_can_restore(enabled, executor, capsys, monkeypatch):
     import sciharness_loop.controller as module
-    monkeypatch.setattr(module, "CodexExecutor", lambda: executor)
+    monkeypatch.setattr(module, "make_executor", lambda *args: executor)
     assert main(["plan", "--task", "Inspect coverage", "--path", str(enabled), "--json"]) == 0
     plan = json.loads(capsys.readouterr().out)["result"]
     assert main(["step", "--plan", plan["id"], "--path", str(enabled), "--json"]) == 1

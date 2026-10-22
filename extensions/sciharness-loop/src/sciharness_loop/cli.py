@@ -1,4 +1,4 @@
-"""Explicit commands only: no daemon, background work, or autonomous run mode."""
+"""Explicit manual steps, approved bounded runs, and scheduled dispatch."""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +10,7 @@ from pathlib import Path
 from . import __version__
 from .controller import Controller
 from .core import find_root
+from .missions import MissionRunner
 from .storage import LoopError
 
 
@@ -17,7 +18,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="sci-loop")
     parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("plan", "step", "status"):
+    for name in ("plan", "step", "status", "run"):
         command = commands.add_parser(name)
         command.add_argument("--path", default=".")
         command.add_argument("--json", action="store_true")
@@ -31,15 +32,47 @@ def main(argv=None):
             command.add_argument("--review-hash")
             command.add_argument("--by", help="Identity of the human approving this exact action")
             command.add_argument("--retry-of", help="Explicitly retry the last failed execution")
-        else:
+        elif name == "status":
             command.add_argument("run_id", nargs="?")
+            group = command.add_mutually_exclusive_group()
+            group.add_argument("--mission", help="Inspect one budgeted research run")
+            group.add_argument("--missions", action="store_true", help="List budgeted runs")
+        else:
+            group = command.add_mutually_exclusive_group(required=True)
+            group.add_argument("--spec", help="Prepare a run for review without executing")
+            group.add_argument("--start", help="Approve and run/schedule a prepared mission")
+            group.add_argument("--resume", help="Approve continuation of a paused/failed mission")
+            group.add_argument("--pause", help="Request a pause without resetting its budget")
+            group.add_argument("--recover", help="Stop orphaned actions and retain reservations")
+            group.add_argument("--dispatch", action="store_true", help="Run due approved missions")
+            command.add_argument("--review-hash")
+            command.add_argument("--by")
     args = parser.parse_args(argv)
     try:
-        controller = Controller(find_root(Path(args.path)))
-        if args.command == "plan":
+        root = find_root(Path(args.path))
+        controller = Controller(root)
+        if args.command == "run":
+            runner = MissionRunner(root)
+            if not (args.start or args.resume) and (args.review_hash or args.by):
+                raise LoopError("approval options apply only to --start/--resume")
+            if args.spec:
+                result = runner.prepare(args.spec)
+            elif args.start or args.resume:
+                result = runner.approve(args.start or args.resume, args.review_hash, args.by,
+                                        resume=bool(args.resume))
+            elif args.pause:
+                result = runner.pause(args.pause)
+            elif args.recover:
+                result = runner.recover(args.recover)
+            else:
+                result = runner.dispatch()
+        elif args.command == "plan":
             result = controller.plan(args.task)
         elif args.command == "status":
-            result = controller.status(args.run_id)
+            if args.run_id and (args.mission or args.missions):
+                raise LoopError("choose execution status or mission status")
+            result = (MissionRunner(root).status(args.mission) if args.mission or args.missions
+                      else controller.status(args.run_id))
         elif args.recover:
             if args.retry_of or args.by or args.review_hash:
                 raise LoopError("--recover cannot be combined with approval or retry options")

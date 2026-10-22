@@ -1,2 +1,2 @@
-include Dockerfile policy.example.yaml LICENSE
+include Dockerfile Dockerfile.deepseek policy.example.yaml run.example.yaml LICENSE
 recursive-include tests *.py Dockerfile

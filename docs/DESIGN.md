@@ -205,6 +205,14 @@ control single-step execution and result acceptance. Formal experiments,
 scientific decisions, STATE updates, and figure approval remain human-led Core
 workflows in this MVP.
 
+Loop 0.2 separates harness adapters (Codex and a DeepSeek tool runner) from the
+enforcing Docker runtime. Its optional guarded mode authorizes a bounded
+research objective, cumulative runtime, and one-shot execution window in
+advance. A backend-neutral controller stages adaptive exploratory results for
+review, preserves interrupted runtime reservations, and dispatches only approved
+scheduled runs. This adds execution records under `.sci/loop/missions/`, not a
+new scientific object type or a Core dependency.
+
 SciHarness intentionally does not provide:
 
 - a database, server, daemon, or workflow orchestrator;

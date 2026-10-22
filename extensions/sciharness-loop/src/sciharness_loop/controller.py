@@ -9,8 +9,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .core import sci
-from .executor import CodexExecutor
-from .policy import load_policy
+from .executor import make_executor
+from .policy import dataset_mounts, load_policy
 from .storage import (
     LoopError, copy_new, digest, file_hash, files, is_run_id, lock, read_json, run_path,
     safe_path, write_json,
@@ -56,13 +56,13 @@ class Controller:
     @property
     def executor(self):
         if self._executor is None:
-            self._executor = CodexExecutor()
+            self._executor = make_executor(self.policy, self.root)
         return self._executor
 
     def require(self, action):
         if self.policy.mode == "record_only":
             raise LoopError("record_only: explicitly enable suggest or step in policy.yaml")
-        if action == "step" and self.policy.mode != "step":
+        if action == "step" and self.policy.mode not in ("step", "guarded_auto"):
             raise LoopError("suggest mode cannot execute or accept research steps")
 
     def load(self, run_id):
@@ -121,13 +121,22 @@ class Controller:
             "context": digest(context),
             "configuration": file_hash(safe_path(self.root, ".sci.yaml")),
         }
+        if self.policy.read_mounts:
+            identity["mounts"] = {}
+            for alias, path in dataset_mounts(self.root, self.policy).items():
+                stat = path.stat()
+                identity["mounts"][alias] = {
+                    "path": path.relative_to(self.root).as_posix(), "device": stat.st_dev,
+                    "inode": stat.st_ino, "mtime_ns": stat.st_mtime_ns, "size": stat.st_size,
+                }
         selected_hash = digest({
             "files": file_identity,
             "configuration": identity["configuration"],
+            **({"mounts": identity["mounts"]} if "mounts" in identity else {}),
         })
         return context, contents, digest(identity), selected_hash
 
-    def new_run(self, kind, task, snapshot, **extra):
+    def new_run(self, kind, task, snapshot, *, schema=None, additional_inputs=None, **extra):
         context, contents, fingerprint, selected_hash = snapshot
         run_id = uuid.uuid4().hex  # Execution IDs are separate from scientific IDs.
         folder = run_path(self.base, run_id)
@@ -154,14 +163,26 @@ class Controller:
                 "and needs_human_review. Your checks are reported claims awaiting human review.\n"
             )
         prompt += "\nREQUEST / APPROVED TASK:\n" + task
+        additional_inputs = additional_inputs or {}
+        if additional_inputs:
+            prompt += "\nRead /input/history.json for prior cycle evidence and its selected artifact paths.\n"
+        if self.policy.read_mounts:
+            prompt += "\nAuthorized read-only datasets: " + ", ".join(
+                "/datasets/" + alias for alias in self.policy.read_mounts) + "\n"
+        schema = schema or (PLAN_SCHEMA if kind == "plan" else RESULT_SCHEMA)
         if len(prompt.encode()) + sum(len(v) for v in contents.values()) + len(
             json.dumps(context).encode()
-        ) > self.policy.max_input_bytes:
+        ) + sum(len(v) for v in additional_inputs.values()) + len(
+            json.dumps(schema).encode()) > self.policy.max_input_bytes:
             raise LoopError("task and context exceed input budget")
+        if len(contents) + len(additional_inputs) > self.policy.max_files:
+            raise LoopError("too many selected context files")
         value = {
             "schema_version": 1, "id": run_id, "kind": kind, "created": now(),
             "policy": asdict(self.policy), "policy_hash": self.policy.fingerprint,
             "input_hash": fingerprint, "selected_input_hash": selected_hash, "task": task, **extra,
+            "additional_context_hash": digest({k: hashlib.sha256(v).hexdigest()
+                                                for k, v in additional_inputs.items()}),
         }
         self.save(value, "prepared")
         inputs.mkdir()
@@ -171,7 +192,13 @@ class Controller:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
         write_json(inputs / "context.json", context)
-        write_json(inputs / "schema.json", PLAN_SCHEMA if kind == "plan" else RESULT_SCHEMA)
+        write_json(inputs / "schema.json", schema)
+        for relative, data in additional_inputs.items():
+            path = safe_path(inputs, relative)
+            if relative != "history.json" and not relative.startswith("prior/"):
+                raise LoopError("additional context must use history.json or prior/")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
         (inputs / "prompt.txt").write_text(prompt, encoding="utf-8")
         return value
 
@@ -187,12 +214,12 @@ class Controller:
                 error += "; cannot confirm executor stopped: " + str(stop_error)
         self.save(value, state, error=error)
 
-    def execute(self, value):
+    def execute(self, value, execution_policy=None):
         folder = run_path(self.base, value["id"])
         self.save(value, "running")
         try:
             self.executor.execute(value["id"], folder / "input", folder / "work",
-                                  folder / "executor.log", self.policy)
+                                  folder / "executor.log", execution_policy or self.policy)
         except (Exception, KeyboardInterrupt) as exc:
             self.fail_execution(value, exc)
             raise LoopError("{}; execution {} retained".format(
@@ -210,14 +237,15 @@ class Controller:
         try:
             manifest = files(folder / "work", self.policy.max_output_bytes, self.policy.max_files)
             result = read_json(folder / "work" / "result.json")
-            schema = PLAN_SCHEMA if value["kind"] == "plan" else RESULT_SCHEMA
+            schema = read_json(folder / "input/schema.json")
             self.validate_result(result, schema)
             if value["kind"] == "plan":
                 if set(manifest) != {"result.json"}:
                     raise LoopError("suggest executor produced unapproved artifacts")
                 return self.save(value, "suggested", result=result, manifest=manifest,
                                  review_hash=digest({"result": result, "inputs": value["input_hash"],
-                                                     "policy": value["policy_hash"]}))
+                                                     "policy": value["policy_hash"],
+                                                     "context": value.get("additional_context_hash")}))
             if "proposal.md" not in manifest:
                 raise LoopError("step must produce proposal.md")
             if any(p not in ("result.json", "proposal.md") and not p.startswith("artifacts/")
@@ -227,7 +255,8 @@ class Controller:
             return self.save(value, "pending_review", result=result, manifest=manifest,
                              review_hash=digest({"manifest": manifest, "plan": value["plan"],
                                                  "inputs": value["input_hash"],
-                                                 "policy": value["policy_hash"]}))
+                                                 "policy": value["policy_hash"],
+                                                     "context": value.get("additional_context_hash")}))
         except (Exception, KeyboardInterrupt) as exc:
             self.save(value, "failed", error=str(exc) or "interrupted")
             raise LoopError("{}; execution {} retained".format(
@@ -246,6 +275,8 @@ class Controller:
                 isinstance(x, str) and x.strip() for x in value
             ))):
                 raise LoopError("invalid executor result: " + name)
+            if "enum" in rule and value not in rule["enum"]:
+                raise LoopError("invalid executor result choice: " + name)
         if "title" in result and (len(result["title"]) > 160 or len(result["task"]) > 16000):
             raise LoopError("plan title/task exceeds the bounded action size")
 
@@ -257,20 +288,39 @@ class Controller:
             self.require_idle()
             return self.execute(self.new_run("plan", task, self.snapshot()))
 
-    def require_idle(self):
+    def require_idle(self, ignore_mission=None):
         unfinished = [v["id"] for v in self.status()["runs"]
                       if v["state"] in ("prepared", "running", "recovery_required", "applying")]
         if unfinished:
             raise LoopError("recover unfinished execution(s) before new work: " + ", ".join(unfinished))
+        directory = safe_path(self.base, "missions")
+        if directory.exists():
+            for path in directory.iterdir():
+                if path.is_symlink():
+                    raise LoopError("symlinked mission state")
+                if path.is_dir() and is_run_id(path.name) and path.name != ignore_mission:
+                    checkpoint = safe_path(path, "checkpoint.json")
+                    if not checkpoint.is_file():
+                        # A crash during mission preparation can leave an
+                        # id-named directory before the checkpoint exists. It is
+                        # not a mission and must not block new work.
+                        continue
+                    value = read_json(checkpoint)
+                    if not isinstance(value, dict):
+                        raise LoopError("corrupt mission checkpoint: " + path.name)
+                    if value.get("state") in ("running", "recovery_required"):
+                        raise LoopError("recover unfinished mission before new work: " + path.name)
 
     def check_policy(self, value):
-        if self.policy.fingerprint != value["policy_hash"]:
+        if load_policy(self.root).fingerprint != value["policy_hash"]:
             raise LoopError("policy changed; create and review a new plan")
 
     def check_inputs(self, value):
         snapshot = self.snapshot()
         if snapshot[2] != value["input_hash"]:
-            raise LoopError("project inputs changed; create and review a new plan")
+            if (not value.get("mission") or snapshot[3] != value["selected_input_hash"]
+                    or not self.mission_context_ok(value, snapshot[0])):
+                raise LoopError("project inputs changed; create and review a new plan")
         return snapshot
 
     @staticmethod
@@ -327,7 +377,11 @@ class Controller:
             value = self.load(run_id)
             if value["kind"] != "step" or value["state"] not in ("pending_review", "applying", "accepted"):
                 raise LoopError("only a completed, reviewable step can be accepted")
-            self.check_policy(value)
+            # Acceptance is a fresh human review of evidence already produced
+            # under the recorded policy. The current policy may legitimately be
+            # switched (guarded_auto -> step) to stop further autonomous work;
+            # that must not strand a completed result. Plan execution still
+            # checks the policy before running.
             approval = self.approval(value, review_hash, by)
             self.verify_work(value)
             if value["state"] == "accepted":
@@ -339,7 +393,9 @@ class Controller:
                 snapshot = self.snapshot()
                 if snapshot[3] != value["selected_input_hash"]:
                     raise LoopError("selected inputs changed during acceptance; recover and make a new plan")
-                if not self.resumed_context_ok(value, snapshot[0]):
+                matches = (self.mission_context_ok(value, snapshot[0]) if value.get("mission")
+                           else self.resumed_context_ok(value, snapshot[0]))
+                if not matches:
                     raise LoopError("project context changed during acceptance; recover and make a new plan")
             # On recovery, applying retains the original approval. Revalidate
             # structure, but the context legitimately includes only this run's
@@ -383,6 +439,34 @@ class Controller:
             return True
         return (new[0].get("id") == record.get("id")
                 and new[0].get("path") == record.get("record"))
+
+    def mission_context_ok(self, value, context, original=None):
+        """Permit reviewed results of this mission; reject unrelated Core changes."""
+        if original is None:
+            original = read_json(run_path(self.base, value["id"]) / "input/context.json")
+        original = json.loads(json.dumps(original))
+        current = json.loads(json.dumps(context))
+        original.pop("diagnostics", None)
+        current.pop("diagnostics", None)
+        before = {r["id"]: r for r in original["active"].pop("explorations", [])}
+        after = {r["id"]: r for r in current["active"].pop("explorations", [])}
+        if original != current or any(after.get(key) != record for key, record in before.items()):
+            return False
+        allowed = {}
+        for row in self.status()["runs"]:
+            if row.get("mission") == value["mission"]:
+                child = self.load(row["id"])
+                if child["state"] == "accepted" or (child["id"] == value.get("id")
+                                                     and child["state"] == "applying"):
+                    allowed[self.record_title(child)] = child.get("record")
+        for key in set(after) - set(before):
+            record = after[key]
+            if record["title"] not in allowed:
+                return False
+            saved = allowed[record["title"]]
+            if saved and (saved["id"] != key or saved["record"] != record["path"]):
+                return False
+        return True
 
     def promote(self, value):
         """Journaled, idempotent creation. Never replace an existing record."""
@@ -444,7 +528,7 @@ class Controller:
                 if not path.is_dir() or not is_run_id(path.name):
                     continue
                 runs.append(self.load(path.name))
-        keys = ("id", "kind", "state", "created", "updated", "plan", "retry_of", "review_hash", "error")
+        keys = ("id", "kind", "state", "created", "updated", "plan", "retry_of", "review_hash", "error", "mission", "cycle")
         return {"mode": self.policy.mode, "runs": [
             {key: value[key] for key in keys if key in value}
             for value in sorted(runs, key=lambda v: v["created"])

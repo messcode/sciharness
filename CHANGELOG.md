@@ -19,6 +19,23 @@ Optional human-controlled Research Loop.
 - Local `.sci/loop/` run state is Git-ignored by default; `policy.yaml` remains
   trackable.
 
+### Loop 0.2.0
+
+- Split harness adapters from the Docker execution runtime. Ship Codex and a
+  bundled DeepSeek Chat Completions tool loop; the latter is a direct API adapter,
+  not the DSH harness.
+- Added `guarded_auto` missions with cumulative runtime budgets, cycle limits,
+  one-shot IANA/offset-aware execution windows, pause/recovery/resumption,
+  preliminary reports, and scheduler-dispatched due runs.
+- Mission approval resolves and records the immutable image ID; dispatch requires
+  a new approval if the tag now points elsewhere.
+- Dispatch continues past a failed mission and reports its errors.
+- Result acceptance reviews already-produced evidence: switching
+  `guarded_auto` to `step` does not strand completed results. `record_only`
+  remains read-only.
+- Hardened mission preparation against crashes, ignored half-prepared mission
+  directories, and rejected empty CLI mission IDs rather than dispatching.
+
 ## 0.8.0
 
 Web viewer redesign.

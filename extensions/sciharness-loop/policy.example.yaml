@@ -1,7 +1,18 @@
 schema_version: 1
-# Missing policy defaults to record_only. Use suggest to disable step/accept.
+# Missing policy defaults to record_only. Use guarded_auto only for approved
+# bounded runs; suggest and step retain their original behavior.
 mode: step
+backend: codex
+runtime: docker
 image: sciharness-codex:local
+# Optional for Codex, required for DeepSeek. Provider-specific credentials are
+# supplied only through the invocation/worker environment.
+model: ''
+# For DeepSeek: use backend: deepseek, its image, and an explicitly chosen model.
+# base_url: https://api.deepseek.com
+# max_turns: 24
+# max_context_bytes: 1000000
+# max_completion_tokens: 4096
 # Exact project-relative files, never globs or directories. Configured charter
 # and state from `sci context` are always included. No dataset is copied implicitly.
 read_files:
@@ -13,6 +24,9 @@ max_output_bytes: 10000000
 max_files: 100
 memory_mb: 2048
 cpus: 2
+# Optional immutable dataset snapshots, read-only in either harness:
+# read_mounts:
+#   pilot: data/subset
 # bridge permits the model API and literature access. none is useful for offline
 # executor fixtures; it prevents API-backed Codex from reaching its model.
 network: bridge

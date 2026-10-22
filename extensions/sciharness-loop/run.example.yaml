@@ -1,0 +1,17 @@
+schema_version: 1
+objective: >-
+  Investigate whether coverage filtering changes a diagnostic association on
+  the authorized pilot subset. Preserve exact commands, failed checks, and
+  preliminary findings for morning review.
+constraints:
+  - Use only the selected inputs and authorized read-only dataset mounts.
+  - Run exploratory diagnostics and small pilots; do not change frozen protocols.
+  - Stop and request approval if a new dataset or formal experimental design is needed.
+runtime_seconds: 28800  # 8 hours of cumulative action/setup runtime, including planning
+max_cycles: 12
+timezone: Asia/Shanghai
+# Replace both dates for the intended ONE night. Local times are resolved using
+# the IANA zone; explicit UTC offsets are also accepted. No daily recurrence.
+start_at: '2026-10-22T18:00:00'
+end_at: '2026-10-23T08:00:00'
+stop_margin_seconds: 60

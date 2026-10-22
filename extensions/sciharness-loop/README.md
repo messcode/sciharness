@@ -1,191 +1,271 @@
-# SciHarness Loop — human-controlled MVP
+# SciHarness Loop
 
-An **optional, separately installed** execution layer for SciHarness 0.8.
-Core does not import it, install its dependencies, change its scientific object
-model, or start it automatically. Uninstalling this package leaves `sci` and all
-scientific records usable. Existing projects need no migration.
+Optional, separately installed research execution for SciHarness 0.8. Core keeps
+its original scientific objects, dependencies, scaffold, CLI, and record-only
+behavior. Existing projects need no migration. Loop 0.2 adds configurable Codex
+and DeepSeek backends, bounded autonomous runs, and scheduled execution windows.
+Nothing starts until explicitly authorized.
 
-This version provides `plan`, `step`, and `status`. There is no daemon,
-continuous `run`, multi-agent planner, or automatic scientific decision.
+## Installation and backend selection
 
-## Installation and explicit opt-in
-
-Requires Python 3.10+, POSIX file locking, and a **local Docker daemon** at
-`/var/run/docker.sock`. Docker enforces filesystem isolation; a host Codex
-fallback is intentionally unavailable. Docker Desktop on macOS is supported
-when it exposes that socket. Windows and rootless/custom Docker sockets are
-not supported by this MVP.
-
-From a checkout of this repository:
+Requires Python 3.10+, POSIX file locking, and a local Docker daemon at
+`/var/run/docker.sock`. Harness adapters and execution runtimes are separate;
+this release supplies the Docker runtime on Linux/macOS, not Windows or Slurm.
+There is no unsandboxed host fallback. From a repository checkout:
 
 ```bash
 python -m pip install . ./extensions/sciharness-loop
-# Pick and review an exact Codex CLI version before building the image:
+```
+
+Build one of the provided images (or a reviewed derivative with your analysis
+libraries). The launcher never pulls images implicitly:
+
+```bash
+# Codex: select a reviewed CLI version explicitly.
 export CODEX_VERSION='REPLACE_WITH_REVIEWED_VERSION'
 docker build --build-arg CODEX_VERSION="$CODEX_VERSION" \
   -t sciharness-codex:local extensions/sciharness-loop
+
+# DeepSeek: standard-library tool harness; no provider SDK dependency.
+docker build -f extensions/sciharness-loop/Dockerfile.deepseek \
+  -t sciharness-deepseek:local extensions/sciharness-loop
 ```
 
-Build the trusted executor image locally. The launcher never pulls an image
-implicitly. The supplied image has Codex, Git, and Python; add project-specific
-analysis dependencies to your own reviewed image as needed. The launcher resolves
-the tag to an image ID before execution and records it in `executor.json`; pin
-the image digest in the policy when an approval must be stable over time.
+Inside a research project, create `.sci/loop/policy.yaml`. Existing v0.1 policies
+remain valid and default to the Codex backend. A minimal DeepSeek policy is:
 
-Inside an existing research project, explicitly create
-`.sci/loop/policy.yaml` using [policy.example.yaml](policy.example.yaml).
-No policy means `record_only`. Unknown fields, modes, permissions, or unsupported
-limits are errors, not silently ignored configuration. The first Loop write
-command also creates `.sci/loop/.gitignore`, which ignores local run state
-(input copies, prompts, transcripts, artifacts) while leaving `policy.yaml`
-trackable; `status` remains write-free.
+```yaml
+schema_version: 1
+mode: step
+backend: deepseek
+runtime: docker
+image: sciharness-deepseek:local
+model: REPLACE_WITH_SELECTED_MODEL
+read_files: [docs/CHARTER.md, docs/STATE.md]
+timeout_seconds: 600
+```
 
-| Mode | Allowed behavior |
+For Codex, use `backend: codex` and the Codex image; `model` is optional and can
+select a specific model. DeepSeek requires an explicit model. Its optional
+`base_url` defaults to `https://api.deepseek.com`; HTTPS is required except for
+loopback HTTP fixtures. See [policy.example.yaml](policy.example.yaml) for all
+common limits. Pin image digests when approval must remain stable across builds;
+each actual image ID and launch is recorded in `executor.json`.
+
+Provide `CODEX_API_KEY` or `DEEPSEEK_API_KEY` through the invocation's environment
+or your worker's secret manager. Only the selected adapter's credential is
+forwarded. Credentials are never written to policy/checkpoints/launch arguments;
+research code inside that container can read its provider credential. No host
+home, saved CLI auth, other service credentials, or Docker config is mounted.
+There is no credential proxy in this release.
+
+| Mode | Authority |
 | --- | --- |
-| `record_only` | Read Loop status; ordinary `sci` commands remain available |
-| `suggest` | Ask Codex for one bounded proposed action; no result promotion |
-| `step` | Suggest, approve one action, execute it in isolation, review and accept its Exploration |
+| `record_only` (default without a policy) | Read Loop status; use ordinary Core commands |
+| `suggest` | Propose one bounded action |
+| `step` | Approve one action, then separately review/accept its result |
+| `guarded_auto` | Authorize a bounded objective; run multiple exploratory cycles; review results afterwards |
 
-Provide `CODEX_API_KEY` only in the environment of the invoked `sci-loop`
-process, using your usual secret manager. Never put it in policy, project files,
-or shell history. This key is passed to the isolated Codex process; research
-code in that container can read it. Use trusted tasks/code and a dedicated key.
-No host home, saved CLI auth, other service credentials, or Docker config is
-forwarded. This MVP does not implement an API credential proxy.
+Unknown policy fields, unsupported backends/runtimes, and unavailable enforcement
+capabilities fail closed. A mode never starts work by itself.
 
-## One complete research cycle
+## Manual plan, step, and acceptance
 
 ```bash
-sci-loop status --json
 sci-loop plan --task "Inspect coverage assumptions with one small diagnostic pilot" --json
-```
-
-`plan` reads `sci context --json`, the configured charter/state, and only the
-explicit `read_files`. It returns an execution ID, a proposed title, task with
-completion criteria, rationale, and `review_hash`. Inspect the **actual proposed
-task**, not only the original request. Then approve that exact plan:
-
-```bash
-sci-loop step --plan <plan-id> --review-hash <plan-review-hash> --by "Researcher" --json
+# Inspect the actual proposed task, rationale, and review_hash.
+sci-loop step --plan <plan-id> --review-hash <plan-hash> --by "Researcher" --json
 sci-loop status <step-id> --json
-```
-
-The result is `pending_review`. Inspect these files under
-`.sci/loop/runs/<step-id>/`:
-
-- `input/`: exact selected inputs, public Core context, prompt, and output schema;
-- `executor.log`: raw Codex JSON events and stderr, including failures;
-- `executor.json`: resolved image ID, created container ID, and the exact
-  `docker create` / `docker start` arguments (no credential value);
-- `work/proposal.md`: proposed exploratory narrative;
-- `work/artifacts/`: scripts, commands, raw checks, and generated outputs;
-- `work/result.json`: agent-reported summary, checks, and limitations;
-- `checkpoint.json`: policy, approvals, hashes, state history, and provenance.
-
-Review scientific validity, failed checks, and evidence independently. If you
-agree to retain the result as an Exploration, approve the **result** hash:
-
-```bash
-sci-loop step --accept <step-id> --review-hash <result-review-hash> --by "Reviewer" --json
+# Review proposal.md, exact scripts/commands, checks, failures, and raw evidence.
+sci-loop step --accept <step-id> --review-hash <result-hash> --by "Reviewer" --json
 sci validate --json
 ```
 
-The controller calls public `sci new exploration`, so Core allocates the `X###`
-ID. It appends the reviewed narrative to that new record and copies the reviewed
-evidence into `outputs/explorations/X###/loop-<step-id>/`. It never edits an
-existing scientific record, CHARTER, STATE, experiment, decision, or figure.
-The record title includes the execution ID to make crash recovery unambiguous.
+Before acceptance, results stay `pending_review`. Acceptance calls public
+`sci new exploration`, so Core allocates the scientific ID, appends the reviewed
+narrative to that new Exploration, and copies evidence under
+`outputs/explorations/X###/loop-<step-id>/`. Existing scientific records,
+CHARTER, STATE, frozen experiments, decisions, and figure approvals have no
+automatic mutation capability. Approval identities are operator-provided audit
+annotations, not authenticated signatures. Structural validation does not
+establish scientific validity.
 
-Approval identities are operator-provided audit annotations, not authenticated
-signatures. The agent cannot invoke the host controller or access approval
-state. Policy, selected input, artifact, or unrelated project-context changes
-invalidate stale approval. When an acceptance resumes after a crash, only that
-acceptance's newly allocated Exploration is exempt from the context check;
-unrelated questions, experiments, or decisions still require a new plan.
-Acceptance preserves exploratory evidence; it does **not** establish a scientific
-claim or start a formal experiment. `sci validate` remains a structural check.
+A completed result can be accepted after switching `guarded_auto` back to `step`
+(the normal safety action after an autonomous run). Acceptance reviews evidence
+already produced under the recorded execution policy, so the current policy is
+not compared again. `record_only` remains read-only: use `step` (or
+`guarded_auto`) to accept results, then switch to `record_only` if desired.
 
-All commands accept `--path DIR` (searching parents) and `--json`.
-JSON uses `schema_version: 1`, `ok`, `command`, and `result` or `error`.
-Exit codes are 0 success, 1 policy/project/execution error, and 2 CLI usage error.
-`status` has no writes, no API call, and no Docker requirement.
+## Budgeted runs and overnight scheduling
 
-## Isolation and permissions
+Set `mode: guarded_auto` explicitly. Create a run specification using
+[run.example.yaml](run.example.yaml). For example:
 
-The trusted controller runs Core's read-only context/validation commands on the
-host. Codex runs in a fresh Docker container with:
-
-- a read-only root filesystem and an exact, bounded **copy** of selected inputs;
-- one writable per-execution output directory and a bounded temporary filesystem;
-- no live-project, host-home, Git metadata, controller-state, or Docker-socket mount;
-- dropped capabilities, no privilege escalation, host UID/GID, PID/memory/CPU
-  limits, and a wall-clock timeout.
-
-The Codex CLI runs `exec` with JSON events, an output schema, and a fresh session.
-Its sandbox mode is `danger-full-access` **inside this dedicated container**;
-Docker is the enforcing outer boundary, avoiding nested sandbox incompatibility.
-The launcher does not use `docker run`: it creates a named container (which cannot
-execute), records its ID, and only then starts it attached. Recovery removes the
-named container, so a create orphaned by controller death can leave at most a
-stopped container, never an executing one. The controller never runs
-agent-generated scripts on the host. Only ordinary, reviewed files in
-`proposal.md`, `result.json`, and `artifacts/` can be promoted; links, devices,
-sockets, FIFOs, traversal, excess files, and oversized output bundles are
-rejected. Other project mutations have no promotion capability.
-
-The local Docker daemon, image, operator, installed Core, and controller are
-trusted. Filesystem containment does not provide network egress filtering.
-`network: bridge` enables API/literature access, including access to network
-services reachable from the container; `host` networking is forbidden. Use
-host/network infrastructure for finer egress rules. Semantic distinctions between
-an exploratory analysis and a formal test require scientific human judgment.
-
-Input size is capped in bytes (not an exact token count), and every invocation
-uses a fresh bounded context instead of accumulated conversation history. Output
-size/count limits apply when collecting/reviewing artifacts; they are **not live
-disk quotas**. Runtime, RAM, and CPU are enforced by the executor. This MVP does
-not promise token/spend limits or independent verification of model-reported
-checks. Provision disk space and inspect transcripts accordingly.
-
-## Checkpoints and recovery
-
-Normal states are `prepared → running → suggested` for a plan and
-`prepared → running → pending_review → applying → accepted` for a step.
-Failures retain the checkpoint, partial files, prompt, and transcript. An
-unconfirmed container stop becomes `recovery_required`, blocking retry until
-recovery. Process death may leave `prepared` or `running` on disk.
-
-```bash
-sci-loop status --json
-# Stop an orphan container and retain its partial evidence:
-sci-loop step --recover <unfinished-execution-id> --json
-# Explicitly retry a failed/interrupted step in a fresh execution:
-sci-loop step --plan <plan-id> --retry-of <failed-step-id> \
-  --review-hash <plan-review-hash> --by "Researcher" --json
+```yaml
+schema_version: 1
+objective: Investigate coverage-filter sensitivity on the authorized pilot subset.
+constraints:
+  - Preserve failed checks and exact commands.
+  - Request approval if a new dataset or formal experimental design is needed.
+runtime_seconds: 28800
+max_cycles: 12
+timezone: Asia/Shanghai
+start_at: '2026-10-22T18:00:00'
+end_at: '2026-10-23T08:00:00'
+stop_margin_seconds: 60
 ```
 
-Recovery can stop an orphan even after switching back to `record_only`.
-Retry preserves the original failed execution. A changed project needs a new
-plan. A checkpoint in `applying` resumes with the same `step --accept` command;
-it reuses the allocated ID and refuses to overwrite edited promoted evidence.
-Acceptance is journaled, not a transaction across the entire filesystem: a
-partially created Exploration can be visible until acceptance resumes. Avoid
-editing that record while recovery is pending. Core's ID claims remain permanent.
-Selected input/configuration changes and unrelated Core context changes block
-resumed acceptance; only that acceptance's newly allocated Exploration is
-exempt. If you need to abandon a partial acceptance, `step --recover <step-id>`
-retains its partial Exploration and evidence for manual review, then permits a
-new plan. It never deletes or rolls back scientific records.
+Replace the dates for the intended **one night**. Naive local timestamps use the
+IANA timezone; explicit offsets are accepted. Ambiguous DST times require an
+explicit offset, and nonexistent local times are rejected. `end_at` must name
+the following date for an overnight window. There is no implicit daily replay.
+Omit start/end times for an immediate run controlled by its cumulative budget.
 
-The OS lock serializes Loop writers and releases automatically on process
-death. It does not lock independent human/Core edits; coordinate those during
-acceptance. Checkpoints are atomically replaced and synced. No logs or failed
-evidence are automatically deleted. `.sci/loop/` run state is Git-ignored by
-default; keep it that way, because it can contain sensitive selected data,
-prompts, and transcripts. Back up `.sci/loop/` and generated output bundles as
-needed. Uninstalling Loop or disabling its policy does not remove these files.
+```bash
+# Prepare only: freeze the specification, selected input identity, and policy.
+sci-loop run --spec overnight.yaml --json
+# Review scope/limits, then authorize this exact mandate once.
+sci-loop run --start <mission-id> --review-hash <mission-hash> --by "Researcher" --json
+sci-loop status --mission <mission-id> --json
+sci-loop status --missions --json
+```
 
-## Development and verification
+If due now, the approved run executes in the foreground. If its start is in the
+future, approval stores a scheduled run and returns without calling a model.
+Configure your existing research-server scheduler to invoke this command at the
+start time, or periodically with at most one dispatcher per project:
+
+```bash
+/absolute/path/to/venv/bin/sci-loop run --dispatch --path /absolute/path/to/study --json
+```
+
+The worker must have Docker and the selected provider credential available in
+its environment. SciHarness does not install cron jobs, services, or ChatGPT
+reminders. Dispatch executes only due, previously approved runs; an expired
+window launches no model. Multiple dispatchers cannot acquire the project lock
+concurrently, and completed runs are not replayed. Dispatch continues past a
+failed mission and reports it under `errors`, so later due missions are still
+attempted.
+
+Each cycle creates a fresh bounded plan, then executes one exploratory action.
+The planner can stop or request additional approval. A `needs_approval` plan ends
+the mission; prepare a new run with the revised objective/constraints (it cannot
+be resumed). The planner sees selected, immutable project inputs plus bounded
+excerpts/whole artifacts from up to three prior cycles; omitted evidence remains
+on disk. Results stay staged for review, not automatically accepted. This version
+authorizes adaptive diagnostics and pilot computations; starting/changing formal
+experiments and scientific conclusions remains a human-led Core workflow.
+
+`runtime_seconds` is cumulative action/runtime wall time, including planning and
+cleanup, not CPU/GPU hours or time spent waiting for a scheduled start/pause.
+Mission preparation/input copying and report generation happen outside the
+action timer and are not charged. Every action receives the minimum of its
+per-action timeout, remaining run budget, and absolute window time. Stop margins
+prevent new actions near either boundary. Time/cycle limits, exhausted scope,
+failures, or a pause request stop the loop. There is no token/spend cap; provider
+usage is logged when available.
+
+A per-action runtime reservation is saved **before** execution. If a controller
+crashes, the unconfirmed reservation remains charged; resuming never resets the
+budget or silently replays the lost action. A separate host deadline supervisor
+is armed before the container starts. It survives controller death and removes
+the container at its deadline. Docker/host failure still requires recovery;
+the supervisor cannot enforce a deadline while the machine or daemon is down.
+
+Approval also resolves the policy image tag to an immutable image ID and records
+`approved_image_id`. Dispatch resolves it again; if the tag now points to a
+different image, the mission becomes `needs_approval` instead of running. Pin an
+image digest in the policy when a scheduled approval must be stable across
+rebuilds.
+
+The preliminary morning report is `.sci/loop/missions/<id>/report.md`. It lists
+completed/failed actions, stop reason, consumed/reserved budget, evidence paths,
+and agent-reported findings. It is a snapshot written on mission state changes,
+not refreshed when a step is later accepted. Review individual step outputs with
+the usual `step --accept` command; switching `guarded_auto` to `step` first is
+supported. Results from the same mission can be accepted in sequence; unrelated
+project/context changes still invalidate approval.
+
+## Pause, recovery, and resumption
+
+```bash
+sci-loop run --pause <mission-id> --json
+sci-loop run --recover <unfinished-mission-id> --json
+sci-loop run --resume <paused-or-failed-id> --review-hash <mission-hash> --by "Researcher" --json
+```
+
+Pause signals are outside the agent container and are observed during active
+execution. Recovery confirms orphaned actions are stopped, retains partial
+files and reservations, and pauses the mission. Resumption requires another
+explicit approval of the unchanged scope and its remaining budget. A changed
+policy/input/context, an expired window, or a changed resolved image requires a
+new run. Pending scientific approval is not silently bypassed by resuming.
+
+The original single-action recovery remains available:
+
+```bash
+sci-loop step --recover <unfinished-action-id> --json
+sci-loop step --plan <plan-id> --retry-of <failed-step-id> \
+  --review-hash <plan-hash> --by "Researcher" --json
+```
+
+A partially completed acceptance resumes with the same `step --accept` command
+and reuses its ID. It refuses to overwrite edited promoted evidence. To abandon
+that partial acceptance, `step --recover` retains the partial Exploration for
+manual review. Acceptance is journaled, not a filesystem-wide transaction.
+
+## Isolation, large datasets, and provenance
+
+Docker supplies a read-only root filesystem and selected copied inputs, one
+writable action output directory, temporary storage, dropped capabilities, no
+privilege escalation, and PID/RAM/CPU limits. No live project, controller state,
+Git metadata, host home, or Docker socket is mounted. The agent never executes
+code on the host. Containers are created and recorded before they are started.
+Only reviewed ordinary files can be promoted; symlinks, FIFOs, devices, traversal,
+invalid schemas, and oversized artifact collections are rejected.
+
+Large datasets can be explicitly mounted without copying them into prompts:
+
+```yaml
+read_mounts:
+  pilot: data/monocyte_subset
+```
+
+The source must be beneath the project's `data/` directory and have no symlink
+path components. It appears read-only as `/datasets/pilot` for either backend.
+Use immutable dataset snapshots. The controller records source path/root stat
+identity; it does **not recursively hash a large mounted directory**. Core's
+dataset registry and declared dataset hashes remain the scientific provenance.
+An external dataset can be staged/bind-mounted beneath `data/` by the operator.
+
+`network: bridge` allows model/literature access; `none` is useful for offline
+fixtures. Host networking is forbidden. This is filesystem containment, not
+network egress filtering. Output byte/file limits apply at collection, not as
+live disk quotas. GPU allocation and other execution runtimes are not exposed
+by this release; unsupported options are rejected.
+
+Checkpoints, exact selected inputs, prompts, transcripts, launch metadata, and
+all successful/failed artifacts live under `.sci/loop/`. Its local run state is
+Git-ignored automatically while `policy.yaml` stays trackable. `status` is
+write-free and requires neither Docker nor API access. Nothing is deleted on
+uninstall or policy disablement. Back up retained execution evidence separately.
+
+## Adapter/runtime contract and verification
+
+The controller selects a `HarnessAdapter` and `ExecutionRuntime`. Adapters own
+commands, model options, and credential names. Runtimes own containment, read-only
+mounts, stop, deadlines, and resource enforcement. Codex uses its CLI; DeepSeek
+uses the bundled text-file/shell tool loop through the documented Chat Completions
+protocol. The DeepSeek adapter is a direct API tool loop, not the DSH harness; a
+DSH integration would be a separate `HarnessAdapter` (the controller/runtime
+boundary is reusable). Both supplied adapters produce the same result schemas and
+use the same review gates.
+The `CodexExecutor` facade remains for existing integrations. Default v0.1
+policy fingerprints remain valid when new options retain their defaults.
+
+Portable research state is stored in SciHarness files rather than vendor
+conversation sessions. Switching a backend/model/runtime changes the policy and
+requires new authorization; it never silently changes a running mission.
 
 ```bash
 python -m pip install -e '.[dev]' -e ./extensions/sciharness-loop
@@ -195,22 +275,14 @@ python -m pytest -q extensions/sciharness-loop/tests
 SCI_LOOP_TEST_DOCKER=1 python -m pytest -q extensions/sciharness-loop/tests/test_docker.py
 ```
 
-Tests use the real public Core CLI for planning context, validation, ID allocation,
-promotion, and recovery. Deterministic executor fixtures cover approval binding,
-stale inputs/artifacts/policy, timeouts, failed attempts, locks, path escapes,
-create-before-start ordering, orphan-create recovery, fingerprint collisions,
-resumed context changes, and resumable promotion. The Docker tests run an
-adversarial fixture through the production launcher without a model/API key; CI
-requires them to run, not skip. Local runs without Docker explicitly skip those
-tests. A real model smoke test requires a built Codex image and operator-provided
-API access; it is not part of credential-free CI. Follow the cycle above to
-perform that acceptance check.
+Tests cover both adapters against common controller contracts, the production
+DeepSeek tool loop over a local HTTP fixture, policy/input integrity, cumulative
+budgets, overnight/DST windows, interruption/reservations, review, and packaging.
+Mandatory CI Docker tests exercise both backends, read-only mounts, symlink
+rejection, a bounded cycle, and stopping a live container after controller death.
+No live provider calls or real API keys are used in CI. Actual model behavior
+still requires an operator-configured smoke test.
 
-Executor replacement is a small Python `Executor` protocol (`execute`, `stop`),
-not an arbitrary host-command CLI option. The controller calls `stop` after every
-`execute`, including failures, and treats an unconfirmed stop as
-`recovery_required`. Future backends must implement an equivalent enforced
-isolation boundary before being exposed to users.
-
-Official CLI contract: [non-interactive execution](https://developers.openai.com/codex/noninteractive/)
-and [CLI reference](https://developers.openai.com/codex/cli/reference/).
+Primary protocol references: [Codex non-interactive execution](https://developers.openai.com/codex/noninteractive/),
+[DeepSeek tool calls](https://api-docs.deepseek.com/guides/tool_calls/), and
+[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/).

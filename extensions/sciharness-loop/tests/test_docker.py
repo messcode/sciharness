@@ -195,3 +195,21 @@ def test_dsh_receives_read_only_project_skills(project, docker_image, monkeypatc
     plan = controller.plan("Skill pilot")
     step = controller.step(plan["id"], plan["review_hash"], "Researcher")
     assert step["state"] == "pending_review"
+
+
+def test_dsh_forwards_only_the_mcp_allowlist_patch(project, docker_image, monkeypatch):
+    set_policy(project, image=docker_image, network="none", backend="dsh",
+               model="fixture-model",
+               mcp={"servers": [{
+                   "name": "fixture",
+                   "command": ["/opt/sciharness/mcp_fixture_server.py"],
+                   "tools": ["lookup"],
+                   "timeout_seconds": 5,
+               }]})
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "unused-fixture-key")
+    monkeypatch.setenv("FIXTURE_EXPECT_MCP", "1")
+    controller = Controller(project)
+    controller._executor = DiagnosticExecutor(controller.policy, project)
+    plan = controller.plan("MCP pilot")
+    step = controller.step(plan["id"], plan["review_hash"], "Researcher")
+    assert step["state"] == "pending_review"

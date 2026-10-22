@@ -1,0 +1,3 @@
+FROM sciharness-dsh:test
+COPY mcp_fixture_server.py /opt/sciharness/mcp_fixture_server.py
+COPY mcp_proxy.py /opt/sciharness/mcp_proxy.py

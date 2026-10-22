@@ -1,6 +1,7 @@
 """Harness-specific invocation, independent of the execution runtime."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -59,10 +60,18 @@ class DshAdapter:
             args += ["--model", policy.model]
         if policy.base_url:
             args += ["--base-url", policy.base_url]
+        mcp_servers = (policy.mcp or {}).get("servers", [])
+        if mcp_servers:
+            args += ["--mcp-json", json.dumps(policy.mcp, sort_keys=True)]
+        credentials = ["DEEPSEEK_API_KEY"]
+        for server in mcp_servers:
+            for name in server.get("env", []):
+                if name not in credentials:
+                    credentials.append(name)
         return Invocation("dsh", "python3", tuple(args),
                           ("DSH_HOME=/tmp/dsh-home",
                            "DSH_PERMISSION_MODE=danger-full-access"),
-                          ("DEEPSEEK_API_KEY",))
+                          tuple(credentials))
 
 
 def adapter_for(name: str) -> HarnessAdapter:

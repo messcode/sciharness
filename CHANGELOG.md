@@ -45,6 +45,10 @@ Optional human-controlled Research Loop.
 - Added read-only project Skill provisioning: selected `.agents/skills` bundles
   are copied into the run input, included in input/review hashes, and exposed to
   DSH through `skill-filesystem.customSkillDirs`.
+- Added default-off MCP stdio support: a policy server/tool allowlist, a filtering
+  JSON-RPC proxy, credential-name-only environment injection, a separate
+  `Dockerfile.dsh-mcp` image, and DSH MCP-client profile patches. MCP config is
+  part of the policy approval hash; no host MCP configuration is used.
 
 ## 0.8.0
 

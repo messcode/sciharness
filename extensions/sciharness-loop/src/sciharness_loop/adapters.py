@@ -46,8 +46,27 @@ class DeepSeekAdapter:
         ), (), ("DEEPSEEK_API_KEY",))
 
 
+class DshAdapter:
+    """Use DSH's headless one-shot bundle inside the Docker boundary.
+
+    The wrapper handles DSH-specific details: profile/home setup, non-interactive
+    permissions, the model patch, the minimal tool surface, the NDJSON stream,
+    and mapping the final answer to /work/result.json.
+    """
+    def invocation(self, policy):
+        args = ["/opt/sciharness/dsh_runner.py"]
+        if policy.model:
+            args += ["--model", policy.model]
+        if policy.base_url:
+            args += ["--base-url", policy.base_url]
+        return Invocation("dsh", "python3", tuple(args),
+                          ("DSH_HOME=/tmp/dsh-home",
+                           "DSH_PERMISSION_MODE=danger-full-access"),
+                          ("DEEPSEEK_API_KEY",))
+
+
 def adapter_for(name: str) -> HarnessAdapter:
-    adapters = {"codex": CodexAdapter, "deepseek": DeepSeekAdapter}
+    adapters = {"codex": CodexAdapter, "deepseek": DeepSeekAdapter, "dsh": DshAdapter}
     if name not in adapters:
         raise LoopError("unsupported harness adapter: " + str(name))
     return adapters[name]()

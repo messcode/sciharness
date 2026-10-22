@@ -112,6 +112,30 @@ class Controller:
                 raise LoopError("input budget exceeded; select fewer/smaller read_files")
             contents[relative] = path.read_bytes()
             total += len(contents[relative])
+        for name in dict.fromkeys(self.policy.skills):
+            folder = safe_path(self.root, ".agents/skills/" + name)
+            if not folder.is_dir():
+                raise LoopError("skill must be an existing directory: .agents/skills/" + name)
+            for path in sorted(folder.rglob("*")):
+                if path.is_symlink():
+                    raise LoopError("skill content cannot be symlinked")
+                if path.is_dir():
+                    continue
+                if not path.is_file():
+                    raise LoopError("skill content must be regular files")
+                parts = path.relative_to(self.root).parts
+                if any(part in (".git", ".sci") for part in parts):
+                    raise LoopError("Git metadata and loop state cannot be agent inputs")
+                relative = path.relative_to(self.root).as_posix()
+                if relative in contents:
+                    continue
+                size = path.stat().st_size
+                if total + size > self.policy.max_input_bytes:
+                    raise LoopError("input budget exceeded; select fewer/smaller skills")
+                if len(contents) >= self.policy.max_files:
+                    raise LoopError("too many input files")
+                contents[relative] = path.read_bytes()
+                total += size
         # Keep file hashes in their own namespace: ordinary project files may
         # legitimately be named "context" or "configuration".
         file_identity = {name: hashlib.sha256(data).hexdigest()
@@ -148,6 +172,12 @@ class Controller:
             "Do not start formal experiments, freeze designs, approve figures, or make final decisions.\n"
             "Preserve evidence, failed checks, and uncertainty. Structural checks do not verify science.\n"
         )
+        if self.policy.skills:
+            prompt += (
+                "Read-only Agent Skills are available under /input/project/.agents/skills; "
+                "read the relevant SKILL.md when its description matches the task. "
+                "Skills are instructions, not scientific evidence.\n"
+            )
         if kind == "plan":
             prompt += (
                 "Suggest ONE bounded exploratory action addressing the request below. "

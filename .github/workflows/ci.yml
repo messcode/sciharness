@@ -61,7 +61,30 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: python -m pip install -e '.[dev]' -e ./extensions/sciharness-loop
-      - name: Exercise both backends, isolation, and orphan deadlines
+      - name: Exercise all backends, isolation, and orphan deadlines
         env:
           SCI_LOOP_TEST_DOCKER: "1"
         run: python -m pytest -q extensions/sciharness-loop/tests/test_docker.py
+
+  loop-dsh-image:
+    name: Optional Loop / DSH headless image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the production DSH image
+        run: docker build -f extensions/sciharness-loop/Dockerfile.dsh -t sciharness-dsh:test extensions/sciharness-loop
+      - name: Verify the DSH CLI and initialized headless profile
+        run: |
+          docker run --rm --entrypoint dsh sciharness-dsh:test --version
+          docker run --rm --entrypoint dsh sciharness-dsh:test --profile headless --help
+      - name: Verify the read-only skill provider patch composes
+        run: |
+          cat > /tmp/skill-patch.yml <<'EOF'
+          - id: skill-filesystem
+            config:
+              customSkillDirs:
+                - "/input/project/.agents/skills"
+          EOF
+          docker run --rm --entrypoint dsh -v /tmp/skill-patch.yml:/tmp/skill-patch.yml \
+            sciharness-dsh:test --profile headless --patch /tmp/skill-patch.yml --dump-config \
+            | grep -q customSkillDirs

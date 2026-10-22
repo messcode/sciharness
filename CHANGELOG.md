@@ -3,6 +3,22 @@
 All notable changes are recorded here. The project is pre-1.0; breaking changes
 are called out explicitly.
 
+## Unreleased
+
+Optional human-controlled Research Loop.
+
+- Added the separately installable `sciharness-loop` extension with explicit
+  `plan`, `step`, and `status` commands, approval-bound plans/results, and
+  Docker-isolated Codex execution.
+- Core remains record-only by default and never imports the extension. Loop
+  execution provenance lives under the project-local `.sci/loop/` directory.
+- Controllers create containers with `docker create` and start them separately,
+  so recovery can remove a container before any execution begins. Input
+  fingerprints namespace file hashes separately from context metadata, and
+  resumed acceptance revalidates unrelated Core context changes.
+- Local `.sci/loop/` run state is Git-ignored by default; `policy.yaml` remains
+  trackable.
+
 ## 0.8.0
 
 Web viewer redesign.

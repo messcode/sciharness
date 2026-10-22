@@ -1,4 +1,6 @@
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -7,6 +9,22 @@ from sciharness_loop.cli import main
 from sciharness_loop.controller import Controller
 from sciharness_loop.core import sci
 from sciharness_loop.storage import LoopError, run_path, write_json
+
+
+def crash_after_new(controller, step, monkeypatch):
+    import sciharness_loop.controller as module
+    actual = module.sci
+
+    def interrupted(root, *args):
+        result = actual(root, *args)
+        if args[0] == "new":
+            raise RuntimeError("after_new")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "sci", interrupted)
+        with pytest.raises(RuntimeError, match="after_new"):
+            controller.accept(step["id"], step["review_hash"], "Reviewer")
 
 
 def test_default_status_and_record_only_do_not_write(project, executor, capsys):
@@ -89,6 +107,18 @@ def test_changed_inputs_invalidate_approval(enabled, executor, point):
             controller.step(plan["id"], plan["review_hash"], "Me")
         else:
             controller.accept(step["id"], step["review_hash"], "Me")
+
+
+@pytest.mark.parametrize("name", ["context", "configuration"])
+def test_selected_file_names_do_not_collide_with_fingerprints(enabled, executor, name):
+    selected = enabled / name
+    selected.write_text("before", encoding="utf-8")
+    set_policy(enabled, read_files=["docs/CHARTER.md", "docs/STATE.md", name])
+    controller = Controller(enabled, executor)
+    plan = controller.plan("Inspect one selected input")
+    selected.write_text("after", encoding="utf-8")
+    with pytest.raises(LoopError, match="inputs changed"):
+        Controller(enabled, executor).step(plan["id"], plan["review_hash"], "Me")
 
 
 def test_changed_policy_requires_new_plan(enabled, executor):
@@ -292,6 +322,90 @@ def test_resumed_acceptance_still_checks_selected_inputs_and_can_be_abandoned(en
     assert "partial Exploration retained" in recovered["error"]
     assert (enabled / recovered["record"]["record"]).is_file()
     assert resumed.plan("A new pilot under the revised context")["state"] == "suggested"
+
+
+def test_resumed_acceptance_rejects_unrelated_context_changes(enabled, executor, monkeypatch):
+    controller = Controller(enabled, executor)
+    _, step = plan_and_step(controller)
+    crash_after_new(controller, step, monkeypatch)
+    sci(enabled, "new", "question", "New research priority")
+    with pytest.raises(LoopError, match="context changed"):
+        Controller(enabled, executor).accept(step["id"], step["review_hash"], "Reviewer")
+
+
+def test_resumed_acceptance_rejects_another_new_exploration(enabled, executor, monkeypatch):
+    controller = Controller(enabled, executor)
+    _, step = plan_and_step(controller)
+    crash_after_new(controller, step, monkeypatch)
+    sci(enabled, "new", "exploration", "Unrelated exploration")
+    with pytest.raises(LoopError, match="context changed"):
+        Controller(enabled, executor).accept(step["id"], step["review_hash"], "Reviewer")
+
+
+def test_whitespace_title_does_not_duplicate_allocation(enabled, executor, monkeypatch):
+    def leading_title(work):
+        path = work / "result.json"
+        result = json.loads(path.read_text(encoding="utf-8"))
+        result["title"] = "  Inspect coverage"
+        path.write_text(json.dumps(result), encoding="utf-8")
+
+    controller = Controller(enabled, executor)
+    executor.mutate = leading_title
+    plan = controller.plan("Inspect coverage")
+    executor.mutate = None
+    step = controller.step(plan["id"], plan["review_hash"], "Me")
+    crash_after_new(controller, step, monkeypatch)
+    accepted = Controller(enabled, executor).accept(
+        step["id"], step["review_hash"], "Reviewer")
+    assert accepted["record"]["id"] == "X001"
+    assert len(sci(enabled, "context")["active"]["explorations"]) == 1
+
+
+def test_successful_run_stops_executor_once(enabled, executor):
+    controller = Controller(enabled, executor)
+    plan = controller.plan("pilot")
+    assert executor.stopped == [plan["id"]]
+
+
+def test_loop_state_is_git_ignored(enabled, executor):
+    subprocess.run(["git", "init", "-q"], cwd=enabled, check=True)
+    controller = Controller(enabled, executor)
+    controller.plan("pilot")
+    assert (enabled / ".sci/loop/.gitignore").is_file()
+    status = subprocess.run(
+        ["git", "-C", str(enabled), "status", "--short", "--untracked-files=all"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert ".sci/loop/.gitignore" in status
+    assert ".sci/loop/policy.yaml" in status
+    assert ".sci/loop/lock" not in status
+    assert ".sci/loop/runs/" not in status
+
+
+def test_relative_root_is_resolved(enabled, executor, monkeypatch):
+    monkeypatch.chdir(enabled.parent)
+    controller = Controller(Path(enabled.name), executor)
+    assert controller.root == enabled.resolve()
+    assert controller.plan("pilot")["state"] == "suggested"
+
+
+def test_corrupt_checkpoint_fields_error_explicitly(enabled, executor):
+    controller = Controller(enabled, executor)
+    plan = controller.plan("pilot")
+    path = run_path(controller.base, plan["id"]) / "checkpoint.json"
+    write_json(path, {"schema_version": 1, "id": plan["id"], "state": "suggested"})
+    with pytest.raises(LoopError, match="corrupt checkpoint"):
+        controller.status(plan["id"])
+    with pytest.raises(LoopError, match="corrupt checkpoint"):
+        controller.status()
+
+
+def test_stray_run_entries_do_not_block_status_or_plan(enabled, executor):
+    controller = Controller(enabled, executor)
+    plan = controller.plan("pilot")
+    (controller.base / "runs" / ".DS_Store").write_text("finder", encoding="utf-8")
+    assert controller.status()["runs"][0]["id"] == plan["id"]
+    assert controller.plan("another pilot")["state"] == "suggested"
 
 
 def test_id_allocation_uses_existing_core_ledger(enabled, executor):

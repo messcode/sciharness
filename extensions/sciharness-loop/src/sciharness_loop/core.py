@@ -25,7 +25,8 @@ def sci(root: Path, *args) -> dict:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "sciharness.cli", *args, "--path", str(root), "--json"],
-            cwd=Path(__file__).parent, env=env, capture_output=True, text=True, timeout=60,
+            cwd=Path(__file__).parent, env=env, capture_output=True, text=True,
+            encoding="utf-8", timeout=60,
         )
     except subprocess.SubprocessError as exc:
         raise LoopError("sci {} did not complete: {}".format(args[0], exc)) from exc

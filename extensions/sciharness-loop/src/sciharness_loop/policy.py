@@ -53,7 +53,7 @@ def load_policy(root: Path) -> Policy:
         raise LoopError("read_files must be an explicit list of files")
     for relative in policy.read_files:
         path = safe_path(root, relative)
-        if path.relative_to(root).parts[0] in (".git", ".sci"):
+        if any(part in (".git", ".sci") for part in path.relative_to(root).parts):
             raise LoopError("Git metadata and loop state cannot be agent inputs")
     limits = {
         "timeout_seconds": 86400, "max_input_bytes": 10_000_000,

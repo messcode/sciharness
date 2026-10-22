@@ -12,7 +12,8 @@ from .core import sci
 from .executor import CodexExecutor
 from .policy import load_policy
 from .storage import (
-    LoopError, copy_new, digest, file_hash, files, lock, read_json, run_path, safe_path, write_json,
+    LoopError, copy_new, digest, file_hash, files, is_run_id, lock, read_json, run_path,
+    safe_path, write_json,
 )
 
 
@@ -36,11 +37,20 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+KNOWN_STATES = frozenset({
+    "prepared", "running", "suggested", "pending_review", "applying", "accepted",
+    "failed", "interrupted", "recovery_required",
+})
+REQUIRED_FIELDS = ("id", "kind", "state", "created", "updated")
+
+
 class Controller:
     def __init__(self, root: Path, executor=None):
-        self.root = root
-        self.base = safe_path(root, ".sci/loop")
-        self.policy = load_policy(root)
+        # ``sci`` runs with its package directory as cwd, so a relative root
+        # would resolve against the wrong directory. Normalize once here.
+        self.root = Path(root).resolve()
+        self.base = safe_path(self.root, ".sci/loop")
+        self.policy = load_policy(self.root)
         self._executor = executor
 
     @property
@@ -59,6 +69,20 @@ class Controller:
         value = read_json(safe_path(run_path(self.base, run_id), "checkpoint.json"))
         if value.get("schema_version") != 1 or value.get("id") != run_id:
             raise LoopError("unsupported or mismatched checkpoint")
+        missing = [name for name in REQUIRED_FIELDS
+                   if not isinstance(value.get(name), str) or not value.get(name)]
+        if missing:
+            raise LoopError("corrupt checkpoint: missing " + ", ".join(missing))
+        if value["kind"] not in ("plan", "step") or value["state"] not in KNOWN_STATES:
+            raise LoopError("corrupt checkpoint: invalid kind or state")
+        if value["kind"] == "step":
+            if not isinstance(value.get("title"), str) or not value["title"].strip():
+                raise LoopError("corrupt checkpoint: missing title")
+            if value["state"] in ("pending_review", "applying", "accepted") and (
+                not isinstance(value.get("manifest"), dict)
+                or not isinstance(value.get("result"), dict)
+            ):
+                raise LoopError("corrupt checkpoint: missing result or manifest")
         return value
 
     def save(self, value, state, **fields):
@@ -80,7 +104,7 @@ class Controller:
         total = len(json.dumps(context).encode())
         for relative in selected:
             path = safe_path(self.root, relative)
-            if path.relative_to(self.root).parts[0] in (".git", ".sci"):
+            if any(part in (".git", ".sci") for part in path.relative_to(self.root).parts):
                 raise LoopError("Git metadata and loop state cannot be agent inputs")
             if not path.is_file():
                 raise LoopError("input must be an existing regular file: " + relative)
@@ -88,11 +112,19 @@ class Controller:
                 raise LoopError("input budget exceeded; select fewer/smaller read_files")
             contents[relative] = path.read_bytes()
             total += len(contents[relative])
-        identity = {name: hashlib.sha256(data).hexdigest()
-                    for name, data in contents.items()}
-        identity["context"] = digest(context)
-        identity["configuration"] = file_hash(safe_path(self.root, ".sci.yaml"))
-        selected_hash = digest({k: v for k, v in identity.items() if k != "context"})
+        # Keep file hashes in their own namespace: ordinary project files may
+        # legitimately be named "context" or "configuration".
+        file_identity = {name: hashlib.sha256(data).hexdigest()
+                         for name, data in contents.items()}
+        identity = {
+            "files": file_identity,
+            "context": digest(context),
+            "configuration": file_hash(safe_path(self.root, ".sci.yaml")),
+        }
+        selected_hash = digest({
+            "files": file_identity,
+            "configuration": identity["configuration"],
+        })
         return context, contents, digest(identity), selected_hash
 
     def new_run(self, kind, task, snapshot, **extra):
@@ -143,15 +175,39 @@ class Controller:
         (inputs / "prompt.txt").write_text(prompt, encoding="utf-8")
         return value
 
+    def fail_execution(self, value, exc):
+        """Retain a failed execution and confirm its executor is not live."""
+        state = "failed"
+        error = str(exc) or "interrupted"
+        if self._executor is not None:
+            try:
+                self._executor.stop(value["id"])
+            except Exception as stop_error:
+                state = "recovery_required"
+                error += "; cannot confirm executor stopped: " + str(stop_error)
+        self.save(value, state, error=error)
+
     def execute(self, value):
         folder = run_path(self.base, value["id"])
         self.save(value, "running")
-        executor = None
         try:
-            executor = self.executor
-            executor.execute(value["id"], folder / "input", folder / "work",
-                             folder / "executor.log", self.policy)
-            executor.stop(value["id"])  # No live writer may survive finalization.
+            self.executor.execute(value["id"], folder / "input", folder / "work",
+                                  folder / "executor.log", self.policy)
+        except (Exception, KeyboardInterrupt) as exc:
+            self.fail_execution(value, exc)
+            raise LoopError("{}; execution {} retained".format(
+                str(exc) or "interrupted", value["id"])) from exc
+        # Stop exactly once, before collecting evidence. A failed stop is a
+        # recovery condition, not a validation failure: the work may be valid
+        # but no live writer may survive finalization.
+        try:
+            self.executor.stop(value["id"])
+        except (Exception, KeyboardInterrupt) as exc:
+            self.save(value, "recovery_required",
+                      error="cannot confirm executor stopped: " + str(exc))
+            raise LoopError("cannot confirm executor stopped; execution {} retained".format(
+                value["id"])) from exc
+        try:
             manifest = files(folder / "work", self.policy.max_output_bytes, self.policy.max_files)
             result = read_json(folder / "work" / "result.json")
             schema = PLAN_SCHEMA if value["kind"] == "plan" else RESULT_SCHEMA
@@ -173,16 +229,9 @@ class Controller:
                                                  "inputs": value["input_hash"],
                                                  "policy": value["policy_hash"]}))
         except (Exception, KeyboardInterrupt) as exc:
-            state = "failed"
-            error = str(exc) or "interrupted"
-            try:
-                if executor is not None:
-                    executor.stop(value["id"])
-            except Exception as stop_error:
-                state = "recovery_required"
-                error += "; cannot confirm executor stopped: " + str(stop_error)
-            self.save(value, state, error=error)
-            raise LoopError("{}; execution {} retained".format(str(exc) or "interrupted", value["id"])) from exc
+            self.save(value, "failed", error=str(exc) or "interrupted")
+            raise LoopError("{}; execution {} retained".format(
+                str(exc) or "interrupted", value["id"])) from exc
 
     @staticmethod
     def validate_result(result, schema):
@@ -286,18 +335,60 @@ class Controller:
             if value["state"] == "pending_review":
                 self.check_inputs(value)
                 self.save(value, "applying", acceptance=approval)
-            elif self.snapshot()[3] != value["selected_input_hash"]:
-                raise LoopError("selected inputs changed during acceptance; recover and make a new plan")
+            else:
+                snapshot = self.snapshot()
+                if snapshot[3] != value["selected_input_hash"]:
+                    raise LoopError("selected inputs changed during acceptance; recover and make a new plan")
+                if not self.resumed_context_ok(value, snapshot[0]):
+                    raise LoopError("project context changed during acceptance; recover and make a new plan")
             # On recovery, applying retains the original approval. Revalidate
-            # structure, but the context now legitimately includes the new X ID.
+            # structure, but the context legitimately includes only this run's
+            # newly allocated Exploration.
             sci(self.root, "validate")
             return self.promote(value)
+
+    @staticmethod
+    def record_title(value):
+        # Core strips titles with .strip(); match that normalization exactly so
+        # crash recovery cannot allocate a second Exploration.
+        return (value["title"] + " (loop " + value["id"] + ")").strip()
+
+    def resumed_context_ok(self, value, context):
+        """Allow only this acceptance's new Exploration to change the context."""
+        original = read_json(run_path(self.base, value["id"]) / "input" / "context.json")
+
+        def split(document):
+            document = json.loads(json.dumps(document))
+            document.pop("diagnostics", None)
+            explorations = document.get("active", {}).pop("explorations", [])
+            return document, {record.get("id"): record for record in explorations}
+
+        original_rest, original_records = split(original)
+        current_rest, current_records = split(context)
+        if original_rest != current_rest:
+            return False
+        if set(original_records) - set(current_records):
+            return False
+        if any(current_records.get(run_id) != record
+               for run_id, record in original_records.items()):
+            return False
+        new = [record for run_id, record in current_records.items()
+               if run_id not in original_records]
+        if not new:
+            return "record" not in value
+        if len(new) != 1 or new[0].get("title") != self.record_title(value):
+            return False
+        record = value.get("record")
+        if record is None:
+            return True
+        return (new[0].get("id") == record.get("id")
+                and new[0].get("path") == record.get("record"))
 
     def promote(self, value):
         """Journaled, idempotent creation. Never replace an existing record."""
         folder = run_path(self.base, value["id"])
         work = folder / "work"
-        title = value["title"] + " (loop " + value["id"] + ")"
+        title = self.record_title(value)
         if "record" not in value:
             # Detect a crash after `sci new` but before the checkpoint write.
             matches = [r for r in sci(self.root, "context")["active"]["explorations"]
@@ -346,8 +437,12 @@ class Controller:
         runs = []
         if directory.exists():
             for path in directory.iterdir():
-                if path.is_symlink() or not path.is_dir():
+                if path.is_symlink():
                     raise LoopError("unexpected execution state entry")
+                # Stray files (for example .DS_Store) and unrelated directories
+                # are not execution state and must not brick every later command.
+                if not path.is_dir() or not is_run_id(path.name):
+                    continue
                 runs.append(self.load(path.name))
         keys = ("id", "kind", "state", "created", "updated", "plan", "retry_of", "review_hash", "error")
         return {"mode": self.policy.mode, "runs": [

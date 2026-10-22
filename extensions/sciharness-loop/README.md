@@ -28,13 +28,17 @@ docker build --build-arg CODEX_VERSION="$CODEX_VERSION" \
 
 Build the trusted executor image locally. The launcher never pulls an image
 implicitly. The supplied image has Codex, Git, and Python; add project-specific
-analysis dependencies to your own reviewed image as needed. Pin the image digest
-in the policy for repeatable environments.
+analysis dependencies to your own reviewed image as needed. The launcher resolves
+the tag to an image ID before execution and records it in `executor.json`; pin
+the image digest in the policy when an approval must be stable over time.
 
 Inside an existing research project, explicitly create
 `.sci/loop/policy.yaml` using [policy.example.yaml](policy.example.yaml).
 No policy means `record_only`. Unknown fields, modes, permissions, or unsupported
-limits are errors, not silently ignored configuration.
+limits are errors, not silently ignored configuration. The first Loop write
+command also creates `.sci/loop/.gitignore`, which ignores local run state
+(input copies, prompts, transcripts, artifacts) while leaving `policy.yaml`
+trackable; `status` remains write-free.
 
 | Mode | Allowed behavior |
 | --- | --- |
@@ -71,7 +75,8 @@ The result is `pending_review`. Inspect these files under
 
 - `input/`: exact selected inputs, public Core context, prompt, and output schema;
 - `executor.log`: raw Codex JSON events and stderr, including failures;
-- `executor.json`: resolved image ID and exact launch arguments (no credential value);
+- `executor.json`: resolved image ID, created container ID, and the exact
+  `docker create` / `docker start` arguments (no credential value);
 - `work/proposal.md`: proposed exploratory narrative;
 - `work/artifacts/`: scripts, commands, raw checks, and generated outputs;
 - `work/result.json`: agent-reported summary, checks, and limitations;
@@ -93,7 +98,10 @@ The record title includes the execution ID to make crash recovery unambiguous.
 
 Approval identities are operator-provided audit annotations, not authenticated
 signatures. The agent cannot invoke the host controller or access approval
-state. Policy, selected input, or artifact changes invalidate stale approval.
+state. Policy, selected input, artifact, or unrelated project-context changes
+invalidate stale approval. When an acceptance resumes after a crash, only that
+acceptance's newly allocated Exploration is exempt from the context check;
+unrelated questions, experiments, or decisions still require a new plan.
 Acceptance preserves exploratory evidence; it does **not** establish a scientific
 claim or start a formal experiment. `sci validate` remains a structural check.
 
@@ -116,10 +124,14 @@ host. Codex runs in a fresh Docker container with:
 The Codex CLI runs `exec` with JSON events, an output schema, and a fresh session.
 Its sandbox mode is `danger-full-access` **inside this dedicated container**;
 Docker is the enforcing outer boundary, avoiding nested sandbox incompatibility.
-The controller never runs agent-generated scripts on the host. Only ordinary,
-reviewed files in `proposal.md`, `result.json`, and `artifacts/` can be promoted;
-links, devices, sockets, FIFOs, traversal, excess files, and oversized output
-bundles are rejected. Other project mutations have no promotion capability.
+The launcher does not use `docker run`: it creates a named container (which cannot
+execute), records its ID, and only then starts it attached. Recovery removes the
+named container, so a create orphaned by controller death can leave at most a
+stopped container, never an executing one. The controller never runs
+agent-generated scripts on the host. Only ordinary, reviewed files in
+`proposal.md`, `result.json`, and `artifacts/` can be promoted; links, devices,
+sockets, FIFOs, traversal, excess files, and oversized output bundles are
+rejected. Other project mutations have no promotion capability.
 
 The local Docker daemon, image, operator, installed Core, and controller are
 trusted. Filesystem containment does not provide network egress filtering.
@@ -159,17 +171,19 @@ it reuses the allocated ID and refuses to overwrite edited promoted evidence.
 Acceptance is journaled, not a transaction across the entire filesystem: a
 partially created Exploration can be visible until acceptance resumes. Avoid
 editing that record while recovery is pending. Core's ID claims remain permanent.
-Selected input/configuration changes also block resumed acceptance. If you need
-to abandon a partial acceptance, `step --recover <step-id>` retains its partial
-Exploration and evidence for manual review, then permits a new plan. It never
-deletes or rolls back scientific records.
+Selected input/configuration changes and unrelated Core context changes block
+resumed acceptance; only that acceptance's newly allocated Exploration is
+exempt. If you need to abandon a partial acceptance, `step --recover <step-id>`
+retains its partial Exploration and evidence for manual review, then permits a
+new plan. It never deletes or rolls back scientific records.
 
 The OS lock serializes Loop writers and releases automatically on process
 death. It does not lock independent human/Core edits; coordinate those during
 acceptance. Checkpoints are atomically replaced and synced. No logs or failed
-evidence are automatically deleted. Back up `.sci/loop/` and generated output
-bundles as needed; they can contain sensitive selected data and transcripts.
-Uninstalling Loop or disabling its policy does not remove these files.
+evidence are automatically deleted. `.sci/loop/` run state is Git-ignored by
+default; keep it that way, because it can contain sensitive selected data,
+prompts, and transcripts. Back up `.sci/loop/` and generated output bundles as
+needed. Uninstalling Loop or disabling its policy does not remove these files.
 
 ## Development and verification
 
@@ -184,15 +198,19 @@ SCI_LOOP_TEST_DOCKER=1 python -m pytest -q extensions/sciharness-loop/tests/test
 Tests use the real public Core CLI for planning context, validation, ID allocation,
 promotion, and recovery. Deterministic executor fixtures cover approval binding,
 stale inputs/artifacts/policy, timeouts, failed attempts, locks, path escapes,
-and resumable promotion. The Docker tests run an adversarial fixture through the
-production launcher without a model/API key; CI requires them to run, not skip.
-Local runs without Docker explicitly skip those tests. A real model smoke test
-requires a built Codex image and operator-provided API access; it is not part of
-credential-free CI. Follow the cycle above to perform that acceptance check.
+create-before-start ordering, orphan-create recovery, fingerprint collisions,
+resumed context changes, and resumable promotion. The Docker tests run an
+adversarial fixture through the production launcher without a model/API key; CI
+requires them to run, not skip. Local runs without Docker explicitly skip those
+tests. A real model smoke test requires a built Codex image and operator-provided
+API access; it is not part of credential-free CI. Follow the cycle above to
+perform that acceptance check.
 
 Executor replacement is a small Python `Executor` protocol (`execute`, `stop`),
-not an arbitrary host-command CLI option. Future backends must implement an
-equivalent enforced isolation boundary before being exposed to users.
+not an arbitrary host-command CLI option. The controller calls `stop` after every
+`execute`, including failures, and treats an unconfirmed stop as
+`recovery_required`. Future backends must implement an equivalent enforced
+isolation boundary before being exposed to users.
 
 Official CLI contract: [non-interactive execution](https://developers.openai.com/codex/noninteractive/)
 and [CLI reference](https://developers.openai.com/codex/cli/reference/).

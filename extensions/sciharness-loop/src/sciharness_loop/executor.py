@@ -6,6 +6,7 @@ mounted in the container. A fresh, bounded input copy is the only read mount.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,6 +17,13 @@ from .storage import LoopError, write_json
 
 
 class Executor(Protocol):
+    """A bounded action runner.
+
+    ``execute`` must not leave a live executor behind: the caller invokes
+    ``stop`` after a normal return and after a failure, and treats an
+    unconfirmed stop as ``recovery_required``.
+    """
+
     def execute(self, run_id: str, inputs: Path, work: Path, log: Path,
                 policy: Policy) -> None: ...
 
@@ -37,12 +45,15 @@ class CodexExecutor:
 
     def stop(self, run_id):
         # A missing container is already stopped; a daemon failure is not.
+        # --rm can also race this cleanup while the container is being removed.
         result = subprocess.run(
             self.docker + ["rm", "--force", self.name(run_id)],
             capture_output=True, timeout=30,
         )
-        if result.returncode and b"No such container" not in result.stderr:
-            raise LoopError("cannot confirm executor stopped: " + result.stderr.decode(errors="replace"))
+        stderr = result.stderr
+        tolerated = (b"No such container", b"is already in progress")
+        if result.returncode and not any(marker in stderr for marker in tolerated):
+            raise LoopError("cannot confirm executor stopped: " + stderr.decode(errors="replace"))
 
     def command(self, run_id, inputs, work, policy):
         if not policy.image:
@@ -51,7 +62,10 @@ class CodexExecutor:
             if "," in str(path):
                 raise LoopError("Docker mount paths cannot contain commas")
         command = self.docker + [
-            "run", "--rm", "--pull=never", "--name", self.name(run_id), "-i",
+            # Creating and starting are separate operations: a container may
+            # exist without ever running, so recovery can remove it before any
+            # start is issued.
+            "create", "--rm", "--pull=never", "--name", self.name(run_id), "-i",
             "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
             "--user", "{}:{}".format(os.getuid(), os.getgid()),
             "--pids-limit=128", "--memory={}m".format(policy.memory_mb),
@@ -71,30 +85,48 @@ class CodexExecutor:
         ]
         return command
 
+    def start_command(self, container_id):
+        return self.docker + ["start", "--attach", "--interactive", container_id]
+
     def execute(self, run_id, inputs, work, log, policy):
         if not os.environ.get("CODEX_API_KEY"):
             raise LoopError("set CODEX_API_KEY for this invocation (never store it in policy)")
+        prompt = (inputs / "prompt.txt").read_bytes()
+        # Pass only a narrow environment to Docker; no inherited host auth,
+        # Docker config, proxy, or arbitrary service credentials. The container
+        # itself receives only the explicit --env values below.
+        env = {"PATH": os.environ.get("PATH", ""), "CODEX_API_KEY": os.environ["CODEX_API_KEY"]}
         command = self.command(run_id, inputs, work, policy)
         inspected = subprocess.run(self.docker + ["image", "inspect", "--format", "{{.Id}}",
                                                  policy.image],
-                                   capture_output=True, text=True, timeout=30)
+                                   capture_output=True, text=True, encoding="utf-8",
+                                   timeout=30)
         if inspected.returncode or not inspected.stdout.strip().startswith("sha256:"):
             raise LoopError("trusted Codex image is not available locally")
         # Execute the exact inspected image, even if its mutable tag moves later.
         image_id = inspected.stdout.strip()
         command[command.index("--entrypoint") + 2] = image_id
-        write_json(log.with_suffix(".json"), {
+        metadata = {
             "backend": "docker-codex", "image": image_id, "command": command,
             "credential_env": "CODEX_API_KEY", "credential_value": "not recorded",
-        })
-        # Pass only a narrow environment to Docker; no inherited host auth,
-        # Docker config, proxy, or arbitrary service credentials.
-        env = {"PATH": os.environ.get("PATH", ""), "CODEX_API_KEY": os.environ["CODEX_API_KEY"]}
+        }
+        write_json(log.with_suffix(".json"), metadata)
+        created = subprocess.run(command, capture_output=True, text=True,
+                                 encoding="utf-8", timeout=60, env=env)
+        if created.returncode:
+            raise LoopError("cannot create executor container: " + (
+                created.stderr.strip() or "Docker exited {}".format(created.returncode)))
+        container_id = created.stdout.strip().splitlines()[-1] if created.stdout.strip() else ""
+        if not re.fullmatch(r"[0-9a-f]{64}", container_id):
+            raise LoopError("unexpected container ID from docker create")
+        start = self.start_command(container_id)
+        metadata.update({"container_id": container_id, "start_command": start})
+        write_json(log.with_suffix(".json"), metadata)
         with log.open("wb") as stream:
-            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=stream,
+            process = subprocess.Popen(start, stdin=subprocess.PIPE, stdout=stream,
                                        stderr=subprocess.STDOUT, env=env)
             try:
-                process.communicate((inputs / "prompt.txt").read_bytes(), timeout=policy.timeout_seconds)
+                process.communicate(prompt, timeout=policy.timeout_seconds)
                 if process.returncode:
                     raise LoopError("Codex executor failed (exit {}); inspect executor.log".format(
                         process.returncode))
@@ -102,5 +134,3 @@ class CodexExecutor:
                 process.kill()
                 process.communicate()
                 raise LoopError("execution interrupted or timed out; partial evidence retained")
-            finally:
-                self.stop(run_id)

@@ -15,6 +15,19 @@ class LoopError(Exception):
     pass
 
 
+RUN_ID_RE = re.compile(r"[0-9a-f]{32}")
+
+# Loop state is local-only: it contains selected-input copies, prompts, raw
+# transcripts, and execution metadata. Keep policy.yaml trackable so review
+# policy remains versioned with the project.
+LOOP_GITIGNORE = """\
+# SciHarness Loop local execution state. policy.yaml stays trackable.
+*
+!.gitignore
+!policy.yaml
+"""
+
+
 def digest(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
@@ -83,14 +96,14 @@ def copy_new(source: Path, target: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def write_json(path: Path, value) -> None:
+def write_text(path: Path, text: str) -> None:
+    """Atomically replace a UTF-8 text file and sync its directory entry."""
     safe_path(path.parent, path.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
     safe_path(path.parent, temporary.name)
     with temporary.open("w", encoding="utf-8") as stream:
-        json.dump(value, stream, indent=2, ensure_ascii=False)
-        stream.write("\n")
+        stream.write(text)
         stream.flush()
         os.fsync(stream.fileno())
     temporary.replace(path)
@@ -103,6 +116,21 @@ def write_json(path: Path, value) -> None:
             os.close(fd)
 
 
+def write_json(path: Path, value) -> None:
+    write_text(path, json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+
+
+def ensure_loop_gitignore(base: Path) -> None:
+    """Ignore local run state by default without touching Core's scaffold.
+
+    ``status`` never takes the lock, so it stays write-free. Every write
+    command calls ``lock`` and therefore gets the ignore file on first use.
+    """
+    path = safe_path(base, ".gitignore")
+    if not path.exists():
+        write_text(path, LOOP_GITIGNORE)
+
+
 def read_json(path: Path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -110,8 +138,12 @@ def read_json(path: Path):
         raise LoopError("cannot read checkpoint {}: {}".format(path, exc)) from exc
 
 
+def is_run_id(value: str) -> bool:
+    return isinstance(value, str) and RUN_ID_RE.fullmatch(value) is not None
+
+
 def run_path(base: Path, run_id: str) -> Path:
-    if not re.fullmatch(r"[0-9a-f]{32}", run_id):
+    if not is_run_id(run_id):
         raise LoopError("invalid execution ID")
     return safe_path(base, "runs/" + run_id)
 
@@ -125,6 +157,7 @@ def lock(base: Path):
         raise LoopError("this MVP requires POSIX file locking") from exc
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     base.chmod(0o700)  # Selected inputs and transcripts may contain private data.
+    ensure_loop_gitignore(base)
     path = safe_path(base, "lock")
     with path.open("a") as stream:
         try:
